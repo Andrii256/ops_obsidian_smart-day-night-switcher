@@ -15,11 +15,13 @@ const DEFAULT_SETTINGS: ATSPluginSettings = {
 export default class ATSPlugin extends Plugin {
 	private timeout: ReturnType<typeof setTimeout> | null;
 	settings: ATSPluginSettings;
+	defaultMode: "dark" | "light";
 
 	async onload() {
 		await this.loadSettings();
 		this.addSettingTab(new ATSPluginSettingTab(this.app, this));
 
+		this.saveDefaultMode();
 		this.checkAndSwitchTheme();
 	}
 
@@ -28,6 +30,8 @@ export default class ATSPlugin extends Plugin {
 			clearTimeout(this.timeout);
 			this.timeout = null;
 		}
+
+		this.setMode(this.defaultMode);
 	}
 
 	async loadSettings() {
@@ -99,6 +103,13 @@ export default class ATSPlugin extends Plugin {
 				break;
 		}
 		this.app.workspace.trigger("css-change");
+	}
+
+	saveDefaultMode() {
+		const getMode = () =>
+			document.body.classList.contains("theme-dark") ? "dark" : "light";
+
+		this.defaultMode = getMode();
 	}
 }
 
