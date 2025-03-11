@@ -1,6 +1,6 @@
 import { App, Plugin, PluginSettingTab, Setting } from "obsidian";
 import { debounce } from "ts-debounce";
-const SunCalc = require("suncalc");
+const SunCalc = require("suncalc"); // https://www.npmjs.com/package/suncalc
 
 interface ATSPluginSettings {
 	latitude: string;
