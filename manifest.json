@@ -1,11 +1,11 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"id": "easy-auto-daynight-theme-switcher",
+	"name": "Easy Auto DayNight Theme Switcher",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"description": "Calculates sunrise and sunset times daily (no fixed hours needed, it follows for solstice phases) and seamlessly toggles between dark mode at night and light mode during the day for an eye-friendly experience.",
+	"author": "Andrii Hrushetskyi",
+	"authorUrl": "https://github.com/Andrii256",
+	"fundingUrl": "",
 	"isDesktopOnly": false
 }
