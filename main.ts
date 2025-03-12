@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS: SDNSPluginSettings = {
 	longitude: "-0.127758",
 };
 
-const DYNAMIC_DIV_ID = "a440b9a8-80d9-4b4b-b7a3-0265c8964997"; // unical ID to make sure it will not clash with other plugins
+const DYNAMIC_DIV_ID = "a440b9a8-80d9-4b4b-b7a3-0265c8964997"; // unique ID to make sure it will not clash with other plugins
 
 export default class SDNSPlugin extends Plugin {
 	private timeout: ReturnType<typeof setTimeout> | null;
@@ -179,7 +179,7 @@ class SDNSPluginSettingTab extends PluginSettingTab {
 
 		containerEl.createEl("h3", { text: "Starting Point Coordinates" });
 
-		containerEl.createDiv().innerHTML = `<p>Please enter the latitude and longitude of your aproximate location (coords of any city within ±200 km)</p>`;
+		containerEl.createDiv().innerHTML = `<p>Please enter the latitude and longitude of your approximate location (coords of any city within ±200 km)</p>`;
 
 		new Setting(containerEl)
 			.setName("Latitude")
