@@ -1,30 +1,36 @@
+// Import the SunCalc library to calculate sun position and light phases
+import SunCalc from "suncalc"; // Documentation: https://www.npmjs.com/package/suncalc
+
 import { App, Plugin, PluginSettingTab, Setting } from "obsidian";
 import { debounce } from "ts-debounce";
-const SunCalc = require("suncalc"); // https://www.npmjs.com/package/suncalc
 
-const DYNAMIC_DIV_ID = "a440b9a8-80d9-4b4b-b7a3-0265c8964997";
+/**
+ * SDNS: Smart DayNight Switcher
+ */
 
-interface ATSPluginSettings {
+interface SDNSPluginSettings {
 	latitude: string;
 	longitude: string;
 }
 
-const DEFAULT_SETTINGS: ATSPluginSettings = {
+const DEFAULT_SETTINGS: SDNSPluginSettings = {
 	latitude: "51.507351",
 	longitude: "-0.127758",
 };
 
-export default class ATSPlugin extends Plugin {
+const DYNAMIC_DIV_ID = "a440b9a8-80d9-4b4b-b7a3-0265c8964997"; // unical ID to make sure it will not clash with other plugins
+
+export default class SDNSPlugin extends Plugin {
 	private timeout: ReturnType<typeof setTimeout> | null;
-	settings: ATSPluginSettings;
-	defaultMode: "dark" | "light";
+	settings: SDNSPluginSettings;
+	defaultColorScheme: "dark" | "light";
 
 	async onload() {
 		await this.loadSettings();
-		this.addSettingTab(new ATSPluginSettingTab(this.app, this));
+		this.addSettingTab(new SDNSPluginSettingTab(this.app, this));
 
-		this.saveDefaultMode();
-		this.checkAndSwitchTheme();
+		this.saveDefaultColorScheme();
+		this.checkAndSwitchColorScheme();
 	}
 
 	onunload() {
@@ -33,7 +39,7 @@ export default class ATSPlugin extends Plugin {
 			this.timeout = null;
 		}
 
-		this.setMode(this.defaultMode);
+		this.setColorScheme(this.defaultColorScheme);
 	}
 
 	async loadSettings() {
@@ -46,7 +52,7 @@ export default class ATSPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
-		this.checkAndSwitchTheme();
+		this.checkAndSwitchColorScheme();
 		this.updateScheduleHTML();
 	}
 
@@ -94,7 +100,7 @@ export default class ATSPlugin extends Plugin {
 		return html;
 	}
 
-	checkAndSwitchTheme() {
+	checkAndSwitchColorScheme() {
 		const now = Date.now();
 
 		const { dawn, sunsetStart: dusk } = SunCalc.getTimes(
@@ -117,13 +123,13 @@ export default class ATSPlugin extends Plugin {
 		let checkDelay: number;
 
 		if (now < dawn) {
-			this.setMode("dark");
+			this.setColorScheme("dark");
 			checkDelay = times.dawn - now;
 		} else if (now >= dawn && now < dusk) {
-			this.setMode("light");
+			this.setColorScheme("light");
 			checkDelay = times.dusk - now;
 		} else {
-			this.setMode("dark");
+			this.setColorScheme("dark");
 			checkDelay = times.tomorrowDawn - now;
 		}
 
@@ -132,13 +138,13 @@ export default class ATSPlugin extends Plugin {
 		}
 
 		this.timeout = setTimeout(
-			this.checkAndSwitchTheme.bind(this),
+			this.checkAndSwitchColorScheme.bind(this),
 			checkDelay
 		);
 	}
 
-	setMode(targetMode: "dark" | "light") {
-		switch (targetMode) {
+	setColorScheme(targetColorScheme: "dark" | "light") {
+		switch (targetColorScheme) {
 			case "dark":
 				document.body.classList.remove("theme-light");
 				document.body.classList.add("theme-dark");
@@ -151,18 +157,18 @@ export default class ATSPlugin extends Plugin {
 		this.app.workspace.trigger("css-change");
 	}
 
-	saveDefaultMode() {
-		const getMode = () =>
+	saveDefaultColorScheme() {
+		const getColorScheme = () =>
 			document.body.classList.contains("theme-dark") ? "dark" : "light";
 
-		this.defaultMode = getMode();
+		this.defaultColorScheme = getColorScheme();
 	}
 }
 
-class ATSPluginSettingTab extends PluginSettingTab {
-	plugin: ATSPlugin;
+class SDNSPluginSettingTab extends PluginSettingTab {
+	plugin: SDNSPlugin;
 
-	constructor(app: App, plugin: ATSPlugin) {
+	constructor(app: App, plugin: SDNSPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
