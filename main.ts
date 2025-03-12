@@ -2,6 +2,8 @@ import { App, Plugin, PluginSettingTab, Setting } from "obsidian";
 import { debounce } from "ts-debounce";
 const SunCalc = require("suncalc"); // https://www.npmjs.com/package/suncalc
 
+const DYNAMIC_DIV_ID = "a440b9a8-80d9-4b4b-b7a3-0265c8964997";
+
 interface ATSPluginSettings {
 	latitude: string;
 	longitude: string;
@@ -45,6 +47,51 @@ export default class ATSPlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData(this.settings);
 		this.checkAndSwitchTheme();
+		this.updateScheduleHTML();
+	}
+
+	updateScheduleHTML() {
+		const container = document.getElementById(DYNAMIC_DIV_ID);
+		if (container) {
+			container.innerHTML = this.generateScheduleHTML();
+		}
+	}
+
+	generateScheduleHTML() {
+		const date = new Date();
+		const rows = [];
+
+		for (let i = 0; i <= 30; i++) {
+			const { dawn, dusk } = SunCalc.getTimes(
+				date,
+				+this.settings.latitude,
+				+this.settings.longitude
+			);
+
+			const dateStr = `${date.getDate()} ${date.toLocaleString("en-US", {
+				month: "short",
+			})} ${date.getFullYear()}`; // date 'DD MMM YYYY'
+			const dawnStr = `${String(dawn.getHours()).padStart(
+				2,
+				"0"
+			)}:${String(dawn.getMinutes()).padStart(2, "0")}`; //  dawn 'HH:MM'
+			const duskStr = `${String(dusk.getHours()).padStart(
+				2,
+				"0"
+			)}:${String(dusk.getMinutes()).padStart(2, "0")}`; // dusk 'HH:MM'
+
+			rows.push(
+				`<tr><td>${dateStr}</td><td>${dawnStr}</td><td>${duskStr}</td></tr>`
+			);
+
+			date.setDate(date.getDate() + 1); // to increase date before next call
+		}
+
+		const html = `<div id="a440b9a8-80d9-4b4b-b7a3-0265c8964997"><h4 style=" border-top: 1px solid var(--background-modifier-border); margin: 1em auto 1em; padding-top: 1em;">Schedule:</h4><table style="width: 100%;text-align: center;"> <tbody> <tr> <th>Date</th> <th>Dawn<br><small>(Light mode will be enabled)</small></th> <th>Dusk<br><small>(Dark mode will be enabled)</small></th> ${rows.join(
+			""
+		)}</tbody></table>`;
+
+		return html;
 	}
 
 	checkAndSwitchTheme() {
@@ -162,5 +209,9 @@ class ATSPluginSettingTab extends PluginSettingTab {
 			);
 
 		containerEl.createDiv().innerHTML = `<p><small >To easily find your latitude and longitude, you can use any simple online service, such as <a href="https://www.latlong.net/">latlong.net</a>, <a href="https://www.gps-coordinates.net/">gps-coordinates.net</a>, or any other similar tools available on the web.</small ><br/><br /><small >* Obsidian does not provide developers with access to geolocation, so this plugin cannot automatically determine your coordinates.</small > <br /> <small style="display: inline-block; margin-top: 0.4em;" >&nbsp;However, <strong>to accurately calculate sunrise and sunset times in your location</strong>, the formula needs an approximate location (within ±200 km) of where you are.</small ></p>`;
+
+		const dynamicContent = containerEl.createDiv();
+		dynamicContent.id = DYNAMIC_DIV_ID;
+		dynamicContent.innerHTML = this.plugin.generateScheduleHTML();
 	}
 }
