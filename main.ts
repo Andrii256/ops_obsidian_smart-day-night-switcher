@@ -62,7 +62,7 @@ export default class ATSPlugin extends Plugin {
 		const rows = [];
 
 		for (let i = 0; i <= 30; i++) {
-			const { dawn, dusk } = SunCalc.getTimes(
+			const { dawn, sunsetStart: dusk } = SunCalc.getTimes(
 				date,
 				+this.settings.latitude,
 				+this.settings.longitude
@@ -97,7 +97,7 @@ export default class ATSPlugin extends Plugin {
 	checkAndSwitchTheme() {
 		const now = Date.now();
 
-		const { dawn, dusk } = SunCalc.getTimes(
+		const { dawn, sunsetStart: dusk } = SunCalc.getTimes(
 			new Date(),
 			+this.settings.latitude,
 			+this.settings.longitude
