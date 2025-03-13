@@ -1,134 +1,224 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+// Import the SunCalc library to calculate sun position and light phases
+import SunCalc from "suncalc"; // Documentation: https://www.npmjs.com/package/suncalc
 
-// Remember to rename these classes and interfaces!
+import { App, Plugin, PluginSettingTab, Setting } from "obsidian";
+import { debounce } from "ts-debounce";
 
-interface MyPluginSettings {
-	mySetting: string;
+/**
+ * SDNS: Smart DayNight Switcher
+ */
+
+interface SDNSPluginSettings {
+	latitude: string;
+	longitude: string;
 }
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
+const DEFAULT_SETTINGS: SDNSPluginSettings = {
+	latitude: "51.507351",
+	longitude: "-0.127758",
+};
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+const DYNAMIC_DIV_ID = "a440b9a8-80d9-4b4b-b7a3-0265c8964997"; // unique ID to make sure it will not clash with other plugins
+
+export default class SDNSPlugin extends Plugin {
+	private timeout: ReturnType<typeof setTimeout> | null;
+	settings: SDNSPluginSettings;
+	defaultColorScheme: "dark" | "light";
 
 	async onload() {
 		await this.loadSettings();
+		this.addSettingTab(new SDNSPluginSettingTab(this.app, this));
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
-
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		this.saveDefaultColorScheme();
+		this.checkAndSwitchColorScheme();
 	}
 
 	onunload() {
+		if (this.timeout !== null) {
+			clearTimeout(this.timeout);
+			this.timeout = null;
+		}
 
+		this.setColorScheme(this.defaultColorScheme);
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			await this.loadData()
+		);
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+		this.checkAndSwitchColorScheme();
+		this.updateScheduleHTML();
+	}
+
+	updateScheduleHTML() {
+		const container = document.getElementById(DYNAMIC_DIV_ID);
+		if (container) {
+			container.innerHTML = this.generateScheduleHTML();
+		}
+	}
+
+	generateScheduleHTML() {
+		const date = new Date();
+		const rows = [];
+
+		for (let i = 0; i <= 30; i++) {
+			const { dawn, sunsetStart: dusk } = SunCalc.getTimes(
+				date,
+				+this.settings.latitude,
+				+this.settings.longitude
+			);
+
+			const dateStr = `${date.getDate()} ${date.toLocaleString("en-US", {
+				month: "short",
+			})} ${date.getFullYear()}`; // date 'DD MMM YYYY'
+			const dawnStr = `${String(dawn.getHours()).padStart(
+				2,
+				"0"
+			)}:${String(dawn.getMinutes()).padStart(2, "0")}`; //  dawn 'HH:MM'
+			const duskStr = `${String(dusk.getHours()).padStart(
+				2,
+				"0"
+			)}:${String(dusk.getMinutes()).padStart(2, "0")}`; // dusk 'HH:MM'
+
+			rows.push(
+				`<tr><td>${dateStr}</td><td>${dawnStr}</td><td>${duskStr}</td></tr>`
+			);
+
+			date.setDate(date.getDate() + 1); // to increase date before next call
+		}
+
+		const html = `<div id="a440b9a8-80d9-4b4b-b7a3-0265c8964997"><h4 style=" border-top: 1px solid var(--background-modifier-border); margin: 1em auto 1em; padding-top: 1em;">Schedule:</h4><table style="width: 100%;text-align: center;"> <tbody> <tr> <th>Date</th> <th>Dawn<br><small>(Light mode will be enabled)</small></th> <th>Dusk<br><small>(Dark mode will be enabled)</small></th> ${rows.join(
+			""
+		)}</tbody></table>`;
+
+		return html;
+	}
+
+	checkAndSwitchColorScheme() {
+		const now = Date.now();
+
+		const { dawn, sunsetStart: dusk } = SunCalc.getTimes(
+			new Date(),
+			+this.settings.latitude,
+			+this.settings.longitude
+		);
+		const tomorrowDawn = SunCalc.getTimes(
+			new Date(now + 24 * 60 * 60 * 1000),
+			+this.settings.latitude,
+			+this.settings.longitude
+		).dawn;
+
+		const times = {
+			dawn: dawn.getTime(),
+			dusk: dusk.getTime(),
+			tomorrowDawn: tomorrowDawn.getTime(),
+		};
+
+		let checkDelay: number;
+
+		if (now < dawn) {
+			this.setColorScheme("dark");
+			checkDelay = times.dawn - now;
+		} else if (now >= dawn && now < dusk) {
+			this.setColorScheme("light");
+			checkDelay = times.dusk - now;
+		} else {
+			this.setColorScheme("dark");
+			checkDelay = times.tomorrowDawn - now;
+		}
+
+		if (this.timeout) {
+			clearTimeout(this.timeout);
+		}
+
+		this.timeout = setTimeout(
+			this.checkAndSwitchColorScheme.bind(this),
+			checkDelay
+		);
+	}
+
+	setColorScheme(targetColorScheme: "dark" | "light") {
+		switch (targetColorScheme) {
+			case "dark":
+				document.body.classList.remove("theme-light");
+				document.body.classList.add("theme-dark");
+				break;
+			case "light":
+				document.body.classList.remove("theme-dark");
+				document.body.classList.add("theme-light");
+				break;
+		}
+		this.app.workspace.trigger("css-change");
+	}
+
+	saveDefaultColorScheme() {
+		const getColorScheme = () =>
+			document.body.classList.contains("theme-dark") ? "dark" : "light";
+
+		this.defaultColorScheme = getColorScheme();
 	}
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
+class SDNSPluginSettingTab extends PluginSettingTab {
+	plugin: SDNSPlugin;
 
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
-
-	constructor(app: App, plugin: MyPlugin) {
+	constructor(app: App, plugin: SDNSPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
 	display(): void {
-		const {containerEl} = this;
-
+		const { containerEl } = this;
 		containerEl.empty();
 
+		containerEl.createEl("h3", { text: "Starting Point Coordinates" });
+
+		containerEl.createDiv().innerHTML = `<p>Please enter the latitude and longitude of your approximate location (coords of any city within ±200 km)</p>`;
+
 		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
+			.setName("Latitude")
+			.setDesc(
+				"Please enter the latitude of your approximate location (within ±200 km)"
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("Latitude")
+					.setValue(this.plugin.settings.latitude)
+					.onChange(
+						debounce(async (value) => {
+							this.plugin.settings.latitude = value;
+							await this.plugin.saveSettings();
+						}, 300)
+					)
+			);
+
+		new Setting(containerEl)
+			.setName("Longitude")
+			.setDesc(
+				"Please enter the longitude of your approximate location (within ±200 km)"
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("Longitude")
+					.setValue(this.plugin.settings.longitude)
+					.onChange(
+						debounce(async (value) => {
+							this.plugin.settings.longitude = value;
+							await this.plugin.saveSettings();
+						}, 300)
+					)
+			);
+
+		containerEl.createDiv().innerHTML = `<p><small >To easily find your latitude and longitude, you can use any simple online service, such as <a href="https://www.latlong.net/">latlong.net</a>, <a href="https://www.gps-coordinates.net/">gps-coordinates.net</a>, or any other similar tools available on the web.</small ><br/><br /><small >* Obsidian does not provide developers with access to geolocation, so this plugin cannot automatically determine your coordinates.</small > <br /> <small style="display: inline-block; margin-top: 0.4em;" >&nbsp;However, <strong>to accurately calculate sunrise and sunset times in your location</strong>, the formula needs an approximate location (within ±200 km) of where you are.</small ></p>`;
+
+		const dynamicContent = containerEl.createDiv();
+		dynamicContent.id = DYNAMIC_DIV_ID;
+		dynamicContent.innerHTML = this.plugin.generateScheduleHTML();
 	}
 }
