@@ -1,6 +1,6 @@
 {
 	"name": "smart-day-night-switcher",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"description": "This plugin intelligently determines sunrise and sunset times and automatically switches the color scheme to light or dark mode.",
 	"main": "main.js",
 	"scripts": {
