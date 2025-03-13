@@ -1,7 +1,7 @@
 {
 	"id": "smart-day-night-switcher",
 	"name": "Smart DayNight switcher",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"minAppVersion": "1.8.9",
 	"description": "This plugin intelligently determines sunrise and sunset times and automatically switches the color scheme to light or dark mode.",
 	"author": "Andrii Hrushetskyi",
