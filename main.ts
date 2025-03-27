@@ -1,8 +1,7 @@
 // Import the SunCalc library to calculate sun position and light phases
 import SunCalc from "suncalc"; // Documentation: https://www.npmjs.com/package/suncalc
 
-import { App, Plugin, PluginSettingTab, Setting } from "obsidian";
-import { debounce } from "ts-debounce";
+import { App, Plugin, PluginSettingTab, Setting, debounce } from "obsidian";
 
 /**
  * SDNS: Smart DayNight Switcher
