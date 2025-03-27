@@ -1,8 +1,6 @@
 # Smart DayNight Switcher
 
-## What does this plugin do?
-
-This plugin calculates daily sunrise and sunset times for your location and automatically switches your Obsidian theme: light mode when the sun rises ☀️ and dark mode when it sets 🌒.
+Calculates daily sunrise and sunset times for your location and automatically switches your Obsidian theme: light mode when the sun rises ☀️ and dark mode when it sets 🌒.
 
 No more manual theme switching!
 
