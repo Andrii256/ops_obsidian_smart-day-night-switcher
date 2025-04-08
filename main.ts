@@ -10,11 +10,15 @@ import { App, Plugin, PluginSettingTab, Setting, debounce } from "obsidian";
 interface SDNSPluginSettings {
 	latitude: string;
 	longitude: string;
+	dawnOffset: string;
+	duskOffset: string;
 }
 
 const DEFAULT_SETTINGS: SDNSPluginSettings = {
 	latitude: "51.507351",
 	longitude: "-0.127758",
+	dawnOffset: "0",
+	duskOffset: "0",
 };
 
 export default class SDNSPlugin extends Plugin {
@@ -67,9 +71,18 @@ export default class SDNSPlugin extends Plugin {
 		).dawn;
 
 		const times = {
-			dawn: dawn.getTime(),
-			dusk: dusk.getTime(),
-			tomorrowDawn: tomorrowDawn.getTime(),
+			dawn: calcWithOffset(
+				dawn.getTime() as number,
+				this.settings.dawnOffset
+			),
+			dusk: calcWithOffset(
+				dusk.getTime() as number,
+				this.settings.duskOffset
+			),
+			tomorrowDawn: calcWithOffset(
+				tomorrowDawn.getTime(),
+				this.settings.duskOffset
+			),
 		};
 
 		let checkDelay: number;
@@ -201,6 +214,40 @@ class SDNSPluginSettingTab extends PluginSettingTab {
 		};
 		addAdditionalDescription();
 
+		new Setting(containerEl)
+			.setName("Dawn Offset")
+			.setDesc(
+				"* Optional. Enter offset in minutes. Use minus before number to make negative offset"
+			)
+			.addText((dawnOffset) =>
+				dawnOffset
+					.setPlaceholder("0")
+					.setValue(this.plugin.settings.dawnOffset)
+					.onChange(
+						debounce(async (value) => {
+							this.plugin.settings.dawnOffset = value;
+							await this.plugin.saveSettings();
+						}, 300)
+					)
+			);
+
+		new Setting(containerEl)
+			.setName("Dusk Offset")
+			.setDesc(
+				"* Optional. Enter offset in minutes. Use minus before number to make negative offset"
+			)
+			.addText((duskOffset) =>
+				duskOffset
+					.setPlaceholder("0")
+					.setValue(this.plugin.settings.duskOffset)
+					.onChange(
+						debounce(async (value) => {
+							this.plugin.settings.duskOffset = value;
+							await this.plugin.saveSettings();
+						}, 300)
+					)
+			);
+
 		const addSchedule = () => {
 			const dynamicContent = containerEl.createEl("div");
 			const scheduleHeader = dynamicContent.createEl("h4", {
@@ -229,10 +276,25 @@ class SDNSPluginSettingTab extends PluginSettingTab {
 
 			const date = new Date();
 			for (let i = 0; i <= 30; i++) {
-				const { dawn, sunsetStart: dusk } = SunCalc.getTimes(
-					date,
-					+this.plugin.settings.latitude,
-					+this.plugin.settings.longitude
+				const { dawn: rawDawn, sunsetStart: rawDusk } =
+					SunCalc.getTimes(
+						date,
+						+this.plugin.settings.latitude,
+						+this.plugin.settings.longitude
+					);
+
+				const dawn = new Date(
+					calcWithOffset(
+						rawDawn.getTime(),
+						this.plugin.settings.dawnOffset
+					)
+				);
+
+				const dusk = new Date(
+					calcWithOffset(
+						rawDusk.getTime(),
+						this.plugin.settings.duskOffset
+					)
 				);
 
 				const dateStr = `${date.getDate()} ${date.toLocaleString(
@@ -260,4 +322,15 @@ class SDNSPluginSettingTab extends PluginSettingTab {
 		};
 		addSchedule();
 	}
+}
+
+function calcWithOffset(initialTimestamp: number, offsetStr: string) {
+	const millisecondsInOneMinute = 1000 * 60;
+	const offset: number = Number(offsetStr);
+
+	if (isNaN(offset)) {
+		return initialTimestamp;
+	}
+
+	return initialTimestamp + offset * millisecondsInOneMinute;
 }
