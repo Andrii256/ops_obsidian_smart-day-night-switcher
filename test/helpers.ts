@@ -8,7 +8,7 @@ export const createApp = () =>
 
 const manifest: PluginManifest = {
 	id: "smart-day-night-switcher",
-	name: "Smart DayNight switcher",
+	name: "🌓 Smart DayNight switcher",
 	version: "0.0.0",
 	minAppVersion: "0.0.0",
 	author: "",

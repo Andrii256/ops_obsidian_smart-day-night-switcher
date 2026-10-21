@@ -1,4 +1,4 @@
-# Smart DayNight Switcher
+# 🌓 Smart DayNight Switcher
 
 Calculates daily sunrise and sunset times for your location and automatically switches your Obsidian theme: light mode when the sun rises ☀️ and dark mode when it sets 🌒.
 
