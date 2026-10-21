@@ -11,7 +11,7 @@ if (input.stop_hook_active) process.exit(0);
 const cwd = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
 const checks = [
 	{ name: "TypeScript check", args: ["tsc", "-noEmit", "-skipLibCheck"] },
-	{ name: "ESLint", args: ["eslint", "main.ts"] },
+	{ name: "ESLint", args: ["eslint", "src"] },
 ];
 
 const failures = [];
