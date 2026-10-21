@@ -4,6 +4,8 @@ Calculates daily sunrise and sunset times for your location and automatically sw
 
 No more manual theme switching!
 
+![Plugin settings tab in dark mode: status line, pause toggle, location, offsets and a seven-day sunrise and sunset schedule](docs/settings-tab.png)
+
 ## How does it work?
 
 The plugin calculates sunrise and sunset for your location on your device and switches Obsidian to light mode at sunrise and dark mode at sunset. It finds your location by itself (from your IP address, or your time zone if that fails); for accurate times, you can enter your own coordinates in the settings.
