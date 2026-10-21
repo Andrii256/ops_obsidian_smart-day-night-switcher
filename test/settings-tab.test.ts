@@ -87,14 +87,14 @@ describe("layout", () => {
 			])
 		).toEqual([
 			["Pause automatic switching", false],
-			["Location", true],
+			["📍 Location", true],
 			["Coordinates", false],
 			["Guess from IP address", false],
 			["Guess from time zone", false],
-			["Switch times", true],
+			["🔧 Offsets", true],
 			[LIGHT, false],
 			[DARK, false],
-			["Schedule", true],
+			["📅 Schedule", true],
 		]);
 	});
 

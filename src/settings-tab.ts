@@ -79,17 +79,17 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 		this.statusEl = containerEl.createEl("div", { cls: "sdns-status" });
 		this.addPauseSetting(containerEl);
 
-		new Setting(containerEl).setName("Location").setHeading();
+		new Setting(containerEl).setName("📍 Location").setHeading();
 		this.addCoordinatesSetting(containerEl);
 		this.addIpSetting(containerEl);
 		this.addTimeZoneSetting(containerEl);
 		addCoordinatesHelp(containerEl);
 
-		new Setting(containerEl).setName("Switch times").setHeading();
+		new Setting(containerEl).setName("🔧 Offsets").setHeading();
 		this.addOffsetSetting(containerEl, "sunriseOffset", "light", "sunrise");
 		this.addOffsetSetting(containerEl, "sunsetOffset", "dark", "sunset");
 
-		new Setting(containerEl).setName("Schedule").setHeading();
+		new Setting(containerEl).setName("📅 Schedule").setHeading();
 		this.scheduleEl = containerEl.createEl("div");
 
 		this.refresh();
