@@ -43,7 +43,7 @@ const { version } = JSON.parse(readFileSync("manifest.json", "utf8"));
 run("git", ["push", "origin", "master", "--follow-tags"]);
 run("gh", [
 	"release", "create", version,
-	"main.js", "manifest.json",
+	"main.js", "manifest.json", "styles.css",
 	"--repo", repo,
 	"--title", version,
 	"--generate-notes",

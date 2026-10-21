@@ -38,6 +38,14 @@ export class Plugin {
 	async saveData(data: any): Promise<void> {}
 
 	addSettingTab(settingTab: PluginSettingTab): void {}
+
+	addCommand(command: any): any {
+		return command;
+	}
+}
+
+export class Notice {
+	constructor(message: string | DocumentFragment, duration?: number) {}
 }
 
 export class PluginSettingTab {
@@ -81,6 +89,97 @@ class TextComponent {
 	}
 }
 
+class DropdownComponent {
+	selectEl: HTMLSelectElement;
+
+	constructor(containerEl: HTMLElement) {
+		this.selectEl = document.createElement("select");
+		containerEl.appendChild(this.selectEl);
+	}
+
+	addOption(value: string, display: string): this {
+		const option = document.createElement("option");
+		option.value = value;
+		option.textContent = display;
+		this.selectEl.appendChild(option);
+		return this;
+	}
+
+	addOptions(options: Record<string, string>): this {
+		for (const [value, display] of Object.entries(options)) {
+			this.addOption(value, display);
+		}
+		return this;
+	}
+
+	setValue(value: string): this {
+		this.selectEl.value = value;
+		return this;
+	}
+
+	getValue(): string {
+		return this.selectEl.value;
+	}
+
+	onChange(callback: (value: string) => any): this {
+		this.selectEl.addEventListener("change", () => callback(this.getValue()));
+		return this;
+	}
+}
+
+export class ButtonComponent {
+	buttonEl: HTMLButtonElement;
+
+	constructor(containerEl: HTMLElement) {
+		this.buttonEl = document.createElement("button");
+		containerEl.appendChild(this.buttonEl);
+	}
+
+	setButtonText(name: string): this {
+		this.buttonEl.textContent = name;
+		return this;
+	}
+
+	setDisabled(disabled: boolean): this {
+		this.buttonEl.disabled = disabled;
+		return this;
+	}
+
+	setTooltip(tooltip: string): this {
+		this.buttonEl.setAttribute("aria-label", tooltip);
+		return this;
+	}
+
+	onClick(callback: (evt: MouseEvent) => any): this {
+		this.buttonEl.addEventListener("click", callback);
+		return this;
+	}
+}
+
+export class ToggleComponent {
+	toggleEl: HTMLInputElement;
+
+	constructor(containerEl: HTMLElement) {
+		this.toggleEl = document.createElement("input");
+		this.toggleEl.type = "checkbox";
+		containerEl.appendChild(this.toggleEl);
+	}
+
+	setValue(on: boolean): this {
+		this.toggleEl.checked = on;
+		return this;
+	}
+
+	getValue(): boolean {
+		return this.toggleEl.checked;
+	}
+
+	onChange(callback: (value: boolean) => any): this {
+		this.toggleEl.addEventListener("change", () => callback(this.getValue()));
+		return this;
+	}
+}
+
 /** Mirrors Obsidian's `.setting-item` markup so tests can query by class. */
 export class Setting {
 	settingEl: HTMLElement;
@@ -112,8 +211,28 @@ export class Setting {
 		return this;
 	}
 
+	setHeading(): this {
+		this.settingEl.classList.add("setting-item-heading");
+		return this;
+	}
+
 	addText(cb: (component: TextComponent) => any): this {
 		cb(new TextComponent(this.controlEl));
+		return this;
+	}
+
+	addToggle(cb: (component: ToggleComponent) => any): this {
+		cb(new ToggleComponent(this.controlEl));
+		return this;
+	}
+
+	addButton(cb: (component: ButtonComponent) => any): this {
+		cb(new ButtonComponent(this.controlEl));
+		return this;
+	}
+
+	addDropdown(cb: (component: DropdownComponent) => any): this {
+		cb(new DropdownComponent(this.controlEl));
 		return this;
 	}
 }

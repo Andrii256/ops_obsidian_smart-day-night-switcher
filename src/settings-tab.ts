@@ -1,19 +1,51 @@
-import { App, PluginSettingTab, Setting, debounce } from "obsidian";
+import {
+	App,
+	ButtonComponent,
+	PluginSettingTab,
+	Setting,
+	TextComponent,
+	ToggleComponent,
+	debounce,
+} from "obsidian";
 
-import { formatDate, formatTime } from "./format";
+import { ColorScheme } from "./color-scheme";
+import { formatDate, formatDay, formatOffset, formatTime } from "./format";
 import type SDNSPlugin from "./main";
 import {
 	MAX_OFFSET_MINUTES,
 	parseCoordinates,
+	parseCoordinatesInput,
 	parseOffsets,
-	SDNSPluginSettings,
 } from "./settings";
-import { getSchedule } from "./sun-times";
+import { getNextSwitch, getSchedule, getSchemeState } from "./sun-times";
+import { guessFromTimeZone } from "./time-zone";
 
 const SCHEDULE_DAYS = 31;
+const SCHEDULE_DAYS_COLLAPSED = 7;
+
+type Direction = "before" | "after";
+
+/** Minutes from 0 to MAX_OFFSET_MINUTES (empty is 0), or null if invalid. */
+function parseOffsetAmount(value: string): number | null {
+	if (value.trim() === "") return 0;
+	const n = +value;
+	return Number.isFinite(n) && n >= 0 && n <= MAX_OFFSET_MINUTES ? n : null;
+}
+
+const SCHEME_LABELS: Record<ColorScheme, string> = {
+	light: "☀️ Light mode",
+	dark: "🌒 Dark mode",
+};
 
 export class SDNSPluginSettingTab extends PluginSettingTab {
 	plugin: SDNSPlugin;
+	private statusEl: HTMLElement | null = null;
+	private scheduleEl: HTMLElement | null = null;
+	private scheduleExpanded = false;
+	private coordinatesText: TextComponent | null = null;
+	private coordinatesErrorEl: HTMLElement | null = null;
+	private guessButton: ButtonComponent | null = null;
+	private pauseToggle: ToggleComponent | null = null;
 
 	constructor(app: App, plugin: SDNSPlugin) {
 		super(app, plugin);
@@ -24,142 +56,328 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("p", {
-			text: "Please enter the latitude and longitude of your approximate location (coords of any city within ±200 km)",
-		});
+		this.statusEl = containerEl.createEl("div", { cls: "sdns-status" });
+		this.addPauseSetting(containerEl);
 
-		this.addTextSetting(containerEl, "latitude", "Latitude", "Latitude");
-		this.addTextSetting(containerEl, "longitude", "Longitude", "Longitude");
-		addAdditionalDescription(containerEl);
-		this.addTextSetting(containerEl, "sunriseOffset", "Sunrise offset", "0");
-		this.addTextSetting(containerEl, "sunsetOffset", "Sunset offset", "0");
-		this.addSchedule(containerEl);
+		new Setting(containerEl).setName("Location").setHeading();
+		this.addCoordinatesSetting(containerEl);
+		this.addTimeZoneSetting(containerEl);
+		addCoordinatesHelp(containerEl);
+
+		new Setting(containerEl).setName("Switch times").setHeading();
+		this.addOffsetSetting(containerEl, "sunriseOffset", "light", "sunrise");
+		this.addOffsetSetting(containerEl, "sunsetOffset", "dark", "sunset");
+
+		new Setting(containerEl).setName("Schedule").setHeading();
+		this.scheduleEl = containerEl.createEl("div");
+
+		this.refresh();
 	}
 
-	private addTextSetting(
-		containerEl: HTMLElement,
-		key: keyof SDNSPluginSettings,
-		name: string,
-		placeholder: string
-	) {
+	/** Re-renders what depends on the settings, leaving the inputs (and their focus) alone. */
+	private refresh() {
+		this.renderStatus();
+		this.renderSchedule();
+		this.updateGuessButton();
+	}
+
+	/** Shows settings changed elsewhere, e.g. by the pause command's hotkey. */
+	update() {
+		this.pauseToggle?.setValue(this.plugin.settings.paused);
+		this.refresh();
+	}
+
+	private async save() {
+		await this.plugin.saveSettings();
+		this.refresh();
+	}
+
+	private addPauseSetting(containerEl: HTMLElement) {
 		new Setting(containerEl)
-			.setName(name)
-			.setDesc(settingDescriptions[key])
-			.addText((text) =>
-				text
-					.setPlaceholder(placeholder)
-					.setValue(this.plugin.settings[key])
-					.onChange(
-						debounce(async (value) => {
-							this.plugin.settings[key] = value;
-							await this.plugin.saveSettings();
-						}, 300)
-					)
+			.setName("Pause automatic switching")
+			.setDesc(
+				"Use Obsidian's own appearance setting until you turn this off."
+			)
+			.addToggle((toggle) =>
+				(this.pauseToggle = toggle)
+					.setValue(this.plugin.settings.paused)
+					.onChange(async (paused) => {
+						// Obsidian calls this from setValue() too, e.g. in update().
+						if (paused === this.plugin.settings.paused) return;
+						this.plugin.settings.paused = paused;
+						await this.save();
+					})
+			)
+			.addButton((button) =>
+				button
+					.setButtonText("Set hotkey")
+					.setTooltip("Assign a hotkey to pause or resume")
+					.onClick(() => openHotkeys(this.app, HOTKEYS_QUERY))
 			);
 	}
 
-	private addSchedule(containerEl: HTMLElement) {
-		const dynamicContent = containerEl.createEl("div");
-		const scheduleHeader = dynamicContent.createEl("h4", {
-			text: "Schedule:",
-		});
-		scheduleHeader.setCssStyles({
-			borderTop: "1px solid var(--background-modifier-border)",
-			margin: "1em auto 1em",
-			paddingTop: "1em",
-		});
+	private addCoordinatesSetting(containerEl: HTMLElement) {
+		const { latitude, longitude } = this.plugin.settings;
+		const value = latitude || longitude ? `${latitude}, ${longitude}` : "";
 
-		const coordinates = parseCoordinates(this.plugin.settings);
-		if (coordinates === null) {
-			dynamicContent.createEl("p", {
-				text: "Enter a valid latitude (-90 to 90) and longitude (-180 to 180) to see the schedule.",
+		const setting = new Setting(containerEl)
+			.setName("Coordinates")
+			.setDesc("Latitude and longitude of your city, as copied from a map.");
+		const errorEl = setting.descEl.createEl("div", { cls: "sdns-error" });
+		this.coordinatesErrorEl = errorEl;
+		const showError = (input: string) => {
+			errorEl.textContent = parseCoordinatesInput(input).error ?? "";
+		};
+		showError(value);
+
+		setting.addText((text) =>
+			(this.coordinatesText = text)
+				.setPlaceholder("51.5074, -0.1278")
+				.setValue(value)
+				.onChange(
+					debounce(async (input: string) => {
+						showError(input);
+						const parsed = parseCoordinatesInput(input);
+						// Keep switching with the last valid location while the user types.
+						if (parsed.error !== undefined) return;
+						this.plugin.settings.latitude = parsed.latitude;
+						this.plugin.settings.longitude = parsed.longitude;
+						await this.save();
+					}, 300)
+				)
+		);
+	}
+
+	private addTimeZoneSetting(containerEl: HTMLElement) {
+		const guess = guessFromTimeZone();
+		if (guess === null) return;
+		const { timeZone, city, latitude, longitude } = guess;
+
+		new Setting(containerEl)
+			.setName("Guess from time zone")
+			.setDesc(
+				`Fill in ${city} (${latitude}, ${longitude}), the main city of your time zone, ${timeZone}. New installs start with it. It can be hundreds of kilometres away, so your own coordinates give more accurate times.`
+			)
+			.addButton((button) => {
+				this.guessButton = button.onClick(async () => {
+					this.plugin.settings.latitude = latitude;
+					this.plugin.settings.longitude = longitude;
+					this.coordinatesText?.setValue(`${latitude}, ${longitude}`);
+					if (this.coordinatesErrorEl) {
+						this.coordinatesErrorEl.textContent = "";
+					}
+					await this.save();
+				});
+			});
+	}
+
+	/** "Use <city>", or disabled while those coordinates are already in use. */
+	private updateGuessButton() {
+		const guess = guessFromTimeZone();
+		if (this.guessButton === null || guess === null) return;
+		const { latitude, longitude } = this.plugin.settings;
+		const inUse =
+			latitude === guess.latitude && longitude === guess.longitude;
+		this.guessButton
+			.setButtonText(inUse ? `Using ${guess.city}` : `Use ${guess.city}`)
+			.setDisabled(inUse);
+	}
+
+	private addOffsetSetting(
+		containerEl: HTMLElement,
+		key: "sunriseOffset" | "sunsetOffset",
+		colorScheme: ColorScheme,
+		event: string
+	) {
+		const offsets = parseOffsets(this.plugin.settings);
+		const minutes = key === "sunriseOffset" ? offsets.sunrise : offsets.sunset;
+
+		const setting = new Setting(containerEl).setName(
+			SCHEME_LABELS[colorScheme]
+		);
+		setting.settingEl.classList.add("sdns-offset");
+
+		// The offset as a size in minutes plus a direction, so nobody has to
+		// remember what a minus sign means.
+		let amount = String(Math.abs(minutes));
+		let direction: Direction = minutes < 0 ? "before" : "after";
+
+		const save = debounce(async (value: number) => {
+			this.plugin.settings[key] = String(value);
+			await this.save();
+		}, 300);
+		const update = () => {
+			const size = parseOffsetAmount(amount);
+			setting.descEl.classList.toggle("sdns-invalid", size === null);
+			if (size === null) {
+				setting.setDesc(
+					`Enter a number of minutes from 0 to ${MAX_OFFSET_MINUTES}`
+				);
+				return;
+			}
+			const value = direction === "before" ? -size : size;
+			setting.setDesc(`Switch ${formatOffset(value, event)}`);
+			save(value);
+		};
+		setting.setDesc(`Switch ${formatOffset(minutes, event)}`);
+
+		setting.addText((text) => {
+			text.inputEl.type = "number";
+			text.inputEl.min = "0";
+			text.inputEl.max = String(MAX_OFFSET_MINUTES);
+			text.inputEl.step = "5";
+			text
+				.setPlaceholder("0")
+				.setValue(amount)
+				.onChange((value) => {
+					amount = value;
+					update();
+				});
+		});
+		setting.controlEl.createEl("span", { text: "min" });
+		setting.addDropdown((dropdown) =>
+			dropdown
+				.addOptions({ before: `before ${event}`, after: `after ${event}` })
+				.setValue(direction)
+				.onChange((value) => {
+					direction = value as Direction;
+					update();
+				})
+		);
+	}
+
+	private renderStatus() {
+		const statusEl = this.statusEl;
+		if (!statusEl) return;
+		statusEl.empty();
+
+		if (this.plugin.settings.paused) {
+			statusEl.createEl("strong", {
+				text: "⏸ Automatic switching is paused",
 			});
 			return;
 		}
 
-		const table = dynamicContent.createEl("table", {
-			attr: { style: "width: 100%; text-align: center;" },
-		});
-		const tbody = table.createEl("tbody");
-		const headerRow = tbody.createEl("tr");
-		headerRow.createEl("th", { text: "Date" });
-		const offsets = parseOffsets(this.plugin.settings);
-		const sunriseTh = headerRow.createEl("th");
-		sunriseTh.createEl("span", { text: "Light mode" });
-		sunriseTh.createEl("br");
-		sunriseTh.createEl("small", {
-			text: `(${describeOffset(offsets.sunrise, "sunrise")})`,
-		});
-		const sunsetTh = headerRow.createEl("th");
-		sunsetTh.createEl("span", { text: "Dark mode" });
-		sunsetTh.createEl("br");
-		sunsetTh.createEl("small", {
-			text: `(${describeOffset(offsets.sunset, "sunset")})`,
-		});
+		const coordinates = parseCoordinates(this.plugin.settings);
+		if (coordinates === null) {
+			statusEl.createEl("span", {
+				text: "Enter your coordinates below to start switching automatically.",
+			});
+			return;
+		}
 
-		const schedule = getSchedule(
-			new Date(),
-			SCHEDULE_DAYS,
-			coordinates.latitude,
-			coordinates.longitude,
+		const now = new Date();
+		const { latitude, longitude } = coordinates;
+		const offsets = parseOffsets(this.plugin.settings);
+		const { colorScheme } = getSchemeState(
+			now.getTime(),
+			latitude,
+			longitude,
 			offsets
 		);
-		for (const { date, sunrise, sunset } of schedule) {
-			const row = tbody.createEl("tr");
+		const next = getNextSwitch(now.getTime(), latitude, longitude, offsets);
+
+		statusEl.createEl("strong", { text: `${SCHEME_LABELS[colorScheme]} now` });
+		statusEl.createEl("span", {
+			text: next
+				? ` · switches to ${next.colorScheme} ${formatDay(next.time, now)} at ${formatTime(next.time)}`
+				: " · no switch within the next day",
+		});
+	}
+
+	private renderSchedule() {
+		const scheduleEl = this.scheduleEl;
+		if (!scheduleEl) return;
+		scheduleEl.empty();
+
+		const coordinates = parseCoordinates(this.plugin.settings);
+		if (coordinates === null) {
+			scheduleEl.createEl("p", {
+				text: "Enter valid coordinates to see when the theme switches.",
+			});
+			return;
+		}
+
+		const table = scheduleEl.createEl("table", { cls: "sdns-schedule" });
+		const headerRow = table.createEl("thead").createEl("tr");
+		headerRow.createEl("th", { text: "Date" });
+		headerRow.createEl("th", { text: SCHEME_LABELS.light });
+		headerRow.createEl("th", { text: SCHEME_LABELS.dark });
+
+		const tbody = table.createEl("tbody");
+		const schedule = getSchedule(
+			new Date(),
+			this.scheduleExpanded ? SCHEDULE_DAYS : SCHEDULE_DAYS_COLLAPSED,
+			coordinates.latitude,
+			coordinates.longitude,
+			parseOffsets(this.plugin.settings)
+		);
+		schedule.forEach(({ date, sunrise, sunset }, i) => {
+			const row = tbody.createEl("tr", i === 0 ? { cls: "sdns-today" } : {});
 			row.createEl("td", { text: formatDate(date) });
 			row.createEl("td", { text: formatTime(sunrise) });
 			row.createEl("td", { text: formatTime(sunset) });
-		}
+		});
+
+		const toggle = scheduleEl.createEl("button", {
+			cls: "sdns-schedule-toggle",
+			text: this.scheduleExpanded
+				? "Show less"
+				: `Show ${SCHEDULE_DAYS} days`,
+		});
+		toggle.addEventListener("click", () => {
+			this.scheduleExpanded = !this.scheduleExpanded;
+			this.renderSchedule();
+		});
 	}
 }
 
-const offsetDescription = (event: string, scheme: string) =>
-	`Minutes after ${event} to switch to ${scheme} mode; use a minus sign to switch before it (up to ±${MAX_OFFSET_MINUTES}). Leave empty or 0 to switch exactly at ${event}.`;
+/** Search text that finds this plugin's commands in Settings → Hotkeys. */
+const HOTKEYS_QUERY = "DayNight";
 
-const settingDescriptions: Record<keyof SDNSPluginSettings, string> = {
-	latitude:
-		"Please enter the latitude of your approximate location (within ±200 km)",
-	longitude:
-		"Please enter the longitude of your approximate location (within ±200 km)",
-	sunriseOffset: offsetDescription("sunrise", "light"),
-	sunsetOffset: offsetDescription("sunset", "dark"),
-};
-
-/** e.g. "at sunrise", "30 min after sunrise", "15 min before sunset" */
-function describeOffset(minutes: number, event: string): string {
-	if (minutes === 0) return `at ${event}`;
-	return `${Math.abs(minutes)} min ${minutes > 0 ? "after" : "before"} ${event}`;
+/** The bits of Obsidian's settings modal used below; not in the public API. */
+interface SettingModal {
+	openTabById?(
+		id: string
+	): { searchComponent?: { inputEl?: HTMLInputElement } } | undefined;
 }
 
-function addAdditionalDescription(containerEl: HTMLElement) {
-	const additionalDescription = containerEl.createEl("p");
+/**
+ * Opens Settings → Hotkeys and types `query` into its search box. Obsidian
+ * has no API for this, so each step is optional: at worst the tab opens
+ * unfiltered, or nothing happens. The search box filters on "input", so
+ * firing that event works like the user typing, whatever the tab's own
+ * refresh methods are called in this version.
+ */
+function openHotkeys(app: App, query: string) {
+	const { setting } = app as unknown as { setting?: SettingModal };
+	const inputEl = setting?.openTabById?.("hotkeys")?.searchComponent?.inputEl;
+	if (!inputEl) return;
+	inputEl.value = query;
+	inputEl.dispatchEvent(new Event("input"));
+	inputEl.focus();
+}
 
-	additionalDescription.createEl("small", {
-		text: "To easily find your latitude and longitude, you can use any simple online service, such as ",
-	});
-	additionalDescription.createEl("small").createEl("a", {
-		href: "https://www.latlong.net/",
-		text: "latlong.net",
-	});
-	additionalDescription.createEl("small", { text: ", " });
-	additionalDescription.createEl("small").createEl("a", {
+function addCoordinatesHelp(containerEl: HTMLElement) {
+	const details = containerEl.createEl("details", { cls: "sdns-help" });
+	details.createEl("summary", { text: "How do I find my coordinates?" });
+
+	const steps = details.createEl("ol");
+	const open = steps.createEl("li");
+	open.append("Open ");
+	open.createEl("a", { href: "https://www.latlong.net/", text: "latlong.net" });
+	open.append(", ");
+	open.createEl("a", {
 		href: "https://www.gps-coordinates.net/",
 		text: "gps-coordinates.net",
 	});
-	additionalDescription.createEl("small", {
-		text: ", or any other similar tools available on the web.",
+	open.append(" or any map.");
+	steps.createEl("li", { text: "Search for your city." });
+	steps.createEl("li", {
+		text: "Copy its latitude and longitude and paste them above.",
 	});
-	additionalDescription.createEl("br");
-	additionalDescription.createEl("br");
-	additionalDescription.createEl("small", {
-		text: "* Obsidian does not provide developers with access to geolocation, so this plugin cannot automatically determine your coordinates.",
-	});
-	additionalDescription.createEl("br");
-	additionalDescription.createEl("small", { text: "However, " });
-	additionalDescription.createEl("small").createEl("strong", {
-		text: "to accurately calculate sunrise and sunset times in your location",
-	});
-	additionalDescription.createEl("small", {
-		text: ", the formula needs an approximate location (within ±200 km) of where you are.",
+
+	details.createEl("p", {
+		text: "A city within about 200 km of you is accurate enough. Obsidian doesn't let plugins detect your location, so it has to be entered here; it never leaves your device and is only used to calculate sunrise and sunset.",
 	});
 }

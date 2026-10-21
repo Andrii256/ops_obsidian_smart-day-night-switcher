@@ -62,13 +62,16 @@ interface SunEvent {
 	colorScheme: ColorScheme;
 }
 
-/** Light from (offset) sunrise to (offset) sunset, dark otherwise. */
-export function getSchemeState(
+/**
+ * Switch events (offset sunrises and sunsets) for ±2 days around `now`:
+ * `raw` has every event that exists, `known` drops pairs that cancel out.
+ */
+function getSwitchEvents(
 	now: number,
 	latitude: number,
 	longitude: number,
-	offsets: Offsets = NO_OFFSETS
-): SchemeState {
+	offsets: Offsets
+): { raw: SunEvent[]; known: SunEvent[] } {
 	// SunCalc picks the solar day nearest to the given time, so these days
 	// always bracket `now` when the sun rises and sets. Two days each way
 	// rather than one, because offsets can cancel out whole days or nights
@@ -87,8 +90,9 @@ export function getSchemeState(
 		);
 	}
 
+	const existing = raw.filter((e) => !isNaN(e.time));
 	const known: SunEvent[] = [];
-	for (const event of raw.filter((e) => !isNaN(e.time))) {
+	for (const event of existing) {
 		// Offsets can move a switch to or past the following one, e.g. a
 		// sunrise offset longer than a short polar winter day. That period
 		// (day or night) vanishes, so both switches cancel out.
@@ -104,6 +108,17 @@ export function getSchemeState(
 		}
 	}
 	known.sort((a, b) => a.time - b.time);
+	return { raw: existing, known };
+}
+
+/** Light from (offset) sunrise to (offset) sunset, dark otherwise. */
+export function getSchemeState(
+	now: number,
+	latitude: number,
+	longitude: number,
+	offsets: Offsets = NO_OFFSETS
+): SchemeState {
+	const { raw, known } = getSwitchEvents(now, latitude, longitude, offsets);
 
 	const last = known.filter((e) => e.time <= now).pop();
 	const next = known.find(
@@ -125,11 +140,11 @@ export function getSchemeState(
 		firstUpcoming ? firstUpcoming.time - now : Infinity
 	);
 
-	const cancelled = known.length < raw.filter((e) => !isNaN(e.time)).length;
+	const cancelled = known.length < raw.length;
 	if (cancelled) {
 		// Days or nights vanished, so the scheme holds across the gap: it's
 		// that of the last switch, or the opposite of the first one.
-		const first = known[0] ?? raw.find((e) => !isNaN(e.time));
+		const first = known[0] ?? raw[0];
 		return {
 			colorScheme:
 				last?.colorScheme ??
@@ -145,6 +160,29 @@ export function getSchemeState(
 		colorScheme: altitude > HORIZON_RAD ? "light" : "dark",
 		msUntilNextChange: recheck,
 	};
+}
+
+export interface NextSwitch {
+	time: Date;
+	colorScheme: ColorScheme;
+}
+
+/**
+ * The next time the scheme from getSchemeState() changes, if that happens
+ * within about two days; null during polar day/night.
+ */
+export function getNextSwitch(
+	now: number,
+	latitude: number,
+	longitude: number,
+	offsets: Offsets = NO_OFFSETS
+): NextSwitch | null {
+	const { colorScheme } = getSchemeState(now, latitude, longitude, offsets);
+	const { known } = getSwitchEvents(now, latitude, longitude, offsets);
+	const next = known.find(
+		(e) => e.time > now && e.colorScheme !== colorScheme
+	);
+	return next ? { time: new Date(next.time), colorScheme: next.colorScheme } : null;
 }
 
 export interface ScheduleEntry extends SunTimes {

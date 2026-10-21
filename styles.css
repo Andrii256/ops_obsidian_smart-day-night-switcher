@@ -1,8 +1,53 @@
-/*
+.sdns-status {
+	margin-bottom: var(--size-4-4);
+	padding: var(--size-4-3) var(--size-4-4);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.sdns-error {
+	margin-top: var(--size-4-1);
+	color: var(--text-error);
+}
 
-If your plugin does not need CSS, delete this file.
+.sdns-error:empty {
+	display: none;
+}
 
-*/
+.sdns-offset input[type="number"] {
+	width: 5em;
+}
+
+.sdns-invalid {
+	color: var(--text-error);
+}
+
+.sdns-help {
+	margin-bottom: var(--size-4-4);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.sdns-help summary {
+	cursor: pointer;
+}
+
+.sdns-schedule {
+	width: 100%;
+	border-collapse: collapse;
+	text-align: center;
+}
+
+.sdns-schedule th,
+.sdns-schedule td {
+	padding: var(--size-4-1) var(--size-4-2);
+}
+
+.sdns-schedule .sdns-today {
+	background-color: var(--background-modifier-hover);
+	font-weight: var(--font-semibold);
+}
+
+.sdns-schedule-toggle {
+	margin-top: var(--size-4-2);
+}

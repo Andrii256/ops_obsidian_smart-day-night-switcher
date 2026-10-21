@@ -1,4 +1,4 @@
-import { Plugin } from "obsidian";
+import { Notice, Plugin } from "obsidian";
 
 import { ColorScheme, getColorScheme, setColorScheme } from "./color-scheme";
 import {
@@ -6,9 +6,11 @@ import {
 	parseCoordinates,
 	parseOffsets,
 	SDNSPluginSettings,
+	TOGGLE_PAUSE_COMMAND,
 } from "./settings";
 import { SDNSPluginSettingTab } from "./settings-tab";
 import { getSchemeState } from "./sun-times";
+import { guessFromTimeZone } from "./time-zone";
 
 /** How often to compare the wall clock with the next switch time. */
 const WAKE_CHECK_MS = 60 * 1000;
@@ -22,10 +24,16 @@ export default class SDNSPlugin extends Plugin {
 	private nextChangeAt: number | null = null;
 	settings: SDNSPluginSettings = { ...DEFAULT_SETTINGS };
 	defaultColorScheme: ColorScheme = getColorScheme();
+	private settingTab: SDNSPluginSettingTab | null = null;
 
 	async onload() {
 		await this.loadSettings();
-		this.addSettingTab(new SDNSPluginSettingTab(this.app, this));
+		this.settingTab = new SDNSPluginSettingTab(this.app, this);
+		this.addSettingTab(this.settingTab);
+		this.addCommand({
+			...TOGGLE_PAUSE_COMMAND,
+			callback: () => this.togglePause(),
+		});
 
 		this.checkAndSwitchColorScheme();
 
@@ -46,11 +54,19 @@ export default class SDNSPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			await this.loadData()
-		);
+		const saved = await this.loadData();
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+
+		// Nothing saved yet: a fresh install. Start from the time zone's main
+		// city rather than London, and save it so the guess happens only once.
+		if (saved == null) {
+			const guess = guessFromTimeZone();
+			if (guess) {
+				this.settings.latitude = guess.latitude;
+				this.settings.longitude = guess.longitude;
+				await this.saveData(this.settings);
+			}
+		}
 	}
 
 	async saveSettings() {
@@ -58,8 +74,25 @@ export default class SDNSPlugin extends Plugin {
 		this.checkAndSwitchColorScheme();
 	}
 
+	async togglePause() {
+		this.settings.paused = !this.settings.paused;
+		await this.saveSettings();
+		// The hotkey also works while the settings tab is open.
+		this.settingTab?.update();
+		new Notice(
+			this.settings.paused
+				? "Automatic switching paused"
+				: "Automatic switching resumed"
+		);
+	}
+
 	checkAndSwitchColorScheme() {
 		this.clearTimeout();
+
+		if (this.settings.paused) {
+			this.setColorScheme(this.defaultColorScheme);
+			return;
+		}
 
 		// Leave the scheme alone until the user enters valid coordinates;
 		// saveSettings re-runs this once they do.

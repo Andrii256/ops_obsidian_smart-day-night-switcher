@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDate, formatTime } from "../src/format";
+import { formatDate, formatDay, formatOffset, formatTime } from "../src/format";
 
 describe("formatDate", () => {
 	it("formats as day, short month and year", () => {
@@ -31,5 +31,37 @@ describe("formatTime", () => {
 
 	it("shows a dash for an Invalid Date", () => {
 		expect(formatTime(new Date(NaN))).toBe("—");
+	});
+});
+
+describe("formatOffset", () => {
+	it.each([
+		[0, "at sunset"],
+		[15, "15 min after sunset"],
+		[-15, "15 min before sunset"],
+		[60, "1 h after sunset"],
+		[-90, "1 h 30 min before sunset"],
+		[180, "3 h after sunset"],
+	])("describes %i minutes", (minutes, expected) => {
+		expect(formatOffset(minutes, "sunset")).toBe(expected);
+	});
+});
+
+describe("formatDay", () => {
+	const now = new Date(2026, 9, 21, 23, 30);
+
+	it("says today and tomorrow", () => {
+		expect(formatDay(new Date(2026, 9, 21, 0, 5), now)).toBe("today");
+		expect(formatDay(new Date(2026, 9, 22, 0, 5), now)).toBe("tomorrow");
+	});
+
+	it("gives the date further out", () => {
+		expect(formatDay(new Date(2026, 9, 23, 8), now)).toBe("on 23 Oct 2026");
+	});
+
+	it("counts calendar days across a DST change", () => {
+		// Clocks go back on 25 Oct 2026 in London.
+		const before = new Date(2026, 9, 24, 23, 30);
+		expect(formatDay(new Date(2026, 9, 25, 23, 30), before)).toBe("tomorrow");
 	});
 });

@@ -4,7 +4,7 @@ import { getColorScheme } from "../src/color-scheme";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { SDNSPluginSettingTab } from "../src/settings-tab";
 import { getSunTimes } from "../src/sun-times";
-import { createPlugin } from "./helpers";
+import { createPlugin, stubTimeZone } from "./helpers";
 
 const LAT = +DEFAULT_SETTINGS.latitude;
 const LNG = +DEFAULT_SETTINGS.longitude;
@@ -27,9 +27,29 @@ afterEach(() => {
 });
 
 describe("loadSettings", () => {
-	it("uses defaults when nothing is saved", async () => {
+	it("uses defaults when the saved settings are empty", async () => {
+		const plugin = createPlugin({});
+		await plugin.loadSettings();
+
+		expect(plugin.settings).toEqual(DEFAULT_SETTINGS);
+		expect(plugin.saveData).not.toHaveBeenCalled();
+	});
+
+	it("guesses coordinates from the time zone on a fresh install, once", async () => {
+		// Tests run in Europe/London; zone.tab puts it at 51°30'30"N 0°07'31"W.
 		const plugin = createPlugin(null);
 		await plugin.loadSettings();
+
+		const guessed = { ...DEFAULT_SETTINGS, latitude: "51.5083", longitude: "-0.1253" };
+		expect(plugin.settings).toEqual(guessed);
+		expect(plugin.saveData).toHaveBeenCalledWith(guessed);
+	});
+
+	it("falls back to London when the time zone has no city", async () => {
+		stubTimeZone("Etc/UTC");
+		const plugin = createPlugin(null);
+		await plugin.loadSettings();
+		vi.unstubAllGlobals();
 
 		expect(plugin.settings).toEqual(DEFAULT_SETTINGS);
 	});
@@ -82,6 +102,55 @@ describe("onload", () => {
 		const plugin = createPlugin({ latitude: "21.3069", longitude: "-157.8583" });
 		await plugin.onload();
 
+		expect(getColorScheme()).toBe("dark");
+	});
+});
+
+describe("pause", () => {
+	it("leaves Obsidian's own scheme and schedules nothing while paused", async () => {
+		vi.setSystemTime(summer(2));
+		const plugin = createPlugin({ paused: true });
+		await plugin.onload();
+
+		expect(getColorScheme()).toBe("light");
+		vi.advanceTimersByTime(sunset.getTime() - Date.now());
+		expect(getColorScheme()).toBe("light");
+	});
+
+	it("restores Obsidian's own scheme when paused, and resumes when unpaused", async () => {
+		vi.setSystemTime(summer(2));
+		const plugin = createPlugin();
+		await plugin.onload();
+		expect(getColorScheme()).toBe("dark");
+
+		plugin.settings.paused = true;
+		await plugin.saveSettings();
+		expect(getColorScheme()).toBe("light");
+
+		plugin.settings.paused = false;
+		await plugin.saveSettings();
+		expect(getColorScheme()).toBe("dark");
+		vi.advanceTimersByTime(sunrise.getTime() - Date.now());
+		expect(getColorScheme()).toBe("light");
+	});
+
+	it("has a command, for a hotkey, that pauses and resumes", async () => {
+		vi.setSystemTime(summer(2));
+		const plugin = createPlugin();
+		const addCommand = vi.spyOn(plugin, "addCommand");
+		await plugin.onload();
+		const command = addCommand.mock.calls[0]?.[0];
+		expect(command?.name).toBe("Pause or resume automatic switching");
+
+		await command?.callback?.();
+		expect(plugin.settings.paused).toBe(true);
+		expect(plugin.saveData).toHaveBeenLastCalledWith(
+			expect.objectContaining({ paused: true })
+		);
+		expect(getColorScheme()).toBe("light");
+
+		await command?.callback?.();
+		expect(plugin.settings.paused).toBe(false);
 		expect(getColorScheme()).toBe("dark");
 	});
 });
