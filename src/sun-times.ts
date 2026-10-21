@@ -4,55 +4,81 @@ import * as SunCalc from "suncalc"; // Documentation: https://www.npmjs.com/pack
 import { ColorScheme } from "./color-scheme";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const POLAR_RECHECK_MS = 60 * 60 * 1000;
+/** Sun altitude at SunCalc's sunrise/sunset (top edge on the horizon, with refraction). */
+const HORIZON_RAD = (-0.833 * Math.PI) / 180;
 
 export interface SunTimes {
-	dawn: Date;
-	dusk: Date;
+	sunrise: Date;
+	sunset: Date;
 }
 
 /**
- * "Dawn" is SunCalc's `dawn`, "dusk" is SunCalc's `sunsetStart`.
+ * Invalid Dates when the sun doesn't rise or set that day (polar day/night).
  */
 export function getSunTimes(
 	date: Date,
 	latitude: number,
 	longitude: number
 ): SunTimes {
-	const { dawn, sunsetStart: dusk } = SunCalc.getTimes(
-		date,
-		latitude,
-		longitude
-	);
-	return { dawn, dusk };
+	const { sunrise, sunset } = SunCalc.getTimes(date, latitude, longitude);
+	return { sunrise, sunset };
 }
 
 export interface SchemeState {
 	colorScheme: ColorScheme;
-	/** Milliseconds until the next transition (today's dawn, today's dusk or tomorrow's dawn). */
+	/** Milliseconds until the next sunrise or sunset (at most an hour during polar day/night). */
 	msUntilNextChange: number;
 }
 
+interface SunEvent {
+	time: number;
+	colorScheme: ColorScheme;
+}
+
+/** Light from sunrise to sunset, dark otherwise. */
 export function getSchemeState(
 	now: number,
 	latitude: number,
 	longitude: number
 ): SchemeState {
-	const { dawn, dusk } = getSunTimes(new Date(now), latitude, longitude);
-	const tomorrowDawn = getSunTimes(
-		new Date(now + DAY_MS),
-		latitude,
-		longitude
-	).dawn;
+	// SunCalc picks the solar day nearest to the given time, so yesterday,
+	// today and tomorrow always bracket `now` when the sun rises and sets.
+	const events: SunEvent[] = [];
+	for (const offset of [-DAY_MS, 0, DAY_MS]) {
+		const { sunrise, sunset } = getSunTimes(
+			new Date(now + offset),
+			latitude,
+			longitude
+		);
+		events.push(
+			{ time: sunrise.getTime(), colorScheme: "light" },
+			{ time: sunset.getTime(), colorScheme: "dark" }
+		);
+	}
+	const known = events
+		.filter((e) => !isNaN(e.time))
+		.sort((a, b) => a.time - b.time);
 
-	if (now < dawn.getTime()) {
-		return { colorScheme: "dark", msUntilNextChange: dawn.getTime() - now };
+	const last = known.filter((e) => e.time <= now).pop();
+	const next = known.find(
+		(e) => e.time > now && e.colorScheme !== last?.colorScheme
+	);
+
+	if (last && next) {
+		return { colorScheme: last.colorScheme, msUntilNextChange: next.time - now };
 	}
-	if (now < dusk.getTime()) {
-		return { colorScheme: "light", msUntilNextChange: dusk.getTime() - now };
-	}
+
+	// Polar day/night: no sunrise or sunset nearby. Decide by the sun's
+	// altitude and re-check later.
+	const { altitude } = SunCalc.getPosition(new Date(now), latitude, longitude);
+	const firstUpcoming = known.find((e) => e.time > now);
 	return {
-		colorScheme: "dark",
-		msUntilNextChange: tomorrowDawn.getTime() - now,
+		colorScheme: altitude > HORIZON_RAD ? "light" : "dark",
+		msUntilNextChange: Math.min(
+			POLAR_RECHECK_MS,
+			firstUpcoming ? firstUpcoming.time - now : Infinity
+		),
 	};
 }
 

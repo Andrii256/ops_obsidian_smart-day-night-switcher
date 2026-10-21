@@ -2,7 +2,7 @@ import { App, PluginSettingTab, Setting, debounce } from "obsidian";
 
 import { formatDate, formatTime } from "./format";
 import type SDNSPlugin from "./main";
-import { SDNSPluginSettings } from "./settings";
+import { parseCoordinates, SDNSPluginSettings } from "./settings";
 import { getSchedule } from "./sun-times";
 
 const SCHEDULE_DAYS = 31;
@@ -63,32 +63,40 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 			paddingTop: "1em",
 		});
 
+		const coordinates = parseCoordinates(this.plugin.settings);
+		if (coordinates === null) {
+			dynamicContent.createEl("p", {
+				text: "Enter a valid latitude (-90 to 90) and longitude (-180 to 180) to see the schedule.",
+			});
+			return;
+		}
+
 		const table = dynamicContent.createEl("table", {
 			attr: { style: "width: 100%; text-align: center;" },
 		});
 		const tbody = table.createEl("tbody");
 		const headerRow = tbody.createEl("tr");
 		headerRow.createEl("th", { text: "Date" });
-		const dawnTh = headerRow.createEl("th");
-		dawnTh.createEl("span", { text: "Dawn" });
-		dawnTh.createEl("br");
-		dawnTh.createEl("small", { text: "(Light mode will be enabled)" });
-		const duskTh = headerRow.createEl("th");
-		duskTh.createEl("span", { text: "Dusk" });
-		duskTh.createEl("br");
-		duskTh.createEl("small", { text: "(Dark mode will be enabled)" });
+		const sunriseTh = headerRow.createEl("th");
+		sunriseTh.createEl("span", { text: "Sunrise" });
+		sunriseTh.createEl("br");
+		sunriseTh.createEl("small", { text: "(Light mode will be enabled)" });
+		const sunsetTh = headerRow.createEl("th");
+		sunsetTh.createEl("span", { text: "Sunset" });
+		sunsetTh.createEl("br");
+		sunsetTh.createEl("small", { text: "(Dark mode will be enabled)" });
 
 		const schedule = getSchedule(
 			new Date(),
 			SCHEDULE_DAYS,
-			+this.plugin.settings.latitude,
-			+this.plugin.settings.longitude
+			coordinates.latitude,
+			coordinates.longitude
 		);
-		for (const { date, dawn, dusk } of schedule) {
+		for (const { date, sunrise, sunset } of schedule) {
 			const row = tbody.createEl("tr");
 			row.createEl("td", { text: formatDate(date) });
-			row.createEl("td", { text: formatTime(dawn) });
-			row.createEl("td", { text: formatTime(dusk) });
+			row.createEl("td", { text: formatTime(sunrise) });
+			row.createEl("td", { text: formatTime(sunset) });
 		}
 	}
 }

@@ -4,8 +4,10 @@ export const formatDate = (date: Date): string =>
 		month: "short",
 	})} ${date.getFullYear()}`;
 
-/** e.g. "07:05" */
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** e.g. "07:05"; "—" for an Invalid Date (no sunrise/sunset during polar day/night) */
 export const formatTime = (date: Date): string =>
-	`${String(date.getHours()).padStart(2, "0")}:${String(
-		date.getMinutes()
-	).padStart(2, "0")}`;
+	isNaN(date.getTime())
+		? "—"
+		: `${pad(date.getHours())}:${pad(date.getMinutes())}`;
