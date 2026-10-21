@@ -242,6 +242,25 @@ describe("coordinates", () => {
 		).toEqual([
 			"https://www.latlong.net/",
 			"https://www.gps-coordinates.net/",
+		]);
+	});
+
+	it("explains why coordinates are needed and how location data is used", async () => {
+		const { containerEl } = await renderTab();
+		const helps = Array.from(containerEl.querySelectorAll("details"));
+
+		expect(helps.map((d) => d.querySelector("summary")?.textContent)).toEqual([
+			"How do I find my coordinates?",
+			"Why are coordinates needed?",
+			"How is my location used?",
+		]);
+		expect(
+			Array.from(helps[2].querySelectorAll("a")).map((a) =>
+				a.getAttribute("href")
+			)
+		).toEqual([
+			"https://www.geojs.io/",
+			"https://nominatim.org/",
 			"https://www.openstreetmap.org/copyright",
 		]);
 	});

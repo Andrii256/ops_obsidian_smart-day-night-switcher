@@ -467,10 +467,10 @@ function openHotkeys(app: App, query: string) {
 }
 
 function addCoordinatesHelp(containerEl: HTMLElement) {
-	const details = containerEl.createEl("details", { cls: "sdns-help" });
-	details.createEl("summary", { text: "How do I find my coordinates?" });
+	const find = containerEl.createEl("details", { cls: "sdns-help" });
+	find.createEl("summary", { text: "How do I find my coordinates?" });
 
-	const steps = details.createEl("ol");
+	const steps = find.createEl("ol");
 	const open = steps.createEl("li");
 	open.append("Open ");
 	open.createEl("a", { href: "https://www.latlong.net/", text: "latlong.net" });
@@ -484,11 +484,40 @@ function addCoordinatesHelp(containerEl: HTMLElement) {
 	steps.createEl("li", {
 		text: "Copy its latitude and longitude and paste them above.",
 	});
-
-	details.createEl("p", {
-		text: "A city within about 200 km of you is accurate enough. Sunrise and sunset are calculated on your device. To show the place's name, the coordinates you enter are sent to OpenStreetMap's Nominatim; the IP address guess asks GeoJS.",
+	find.createEl("p", {
+		text: "A city within about 200 km of you is accurate enough.",
 	});
-	const credit = details.createEl("p");
+
+	const why = containerEl.createEl("details", { cls: "sdns-help" });
+	why.createEl("summary", { text: "Why are coordinates needed?" });
+	why.createEl("p", {
+		text: "Sunrise and sunset times depend on your location and the date. For example, on March 12, 2025, the sun rises at 07:05 and sets at 16:16 in Madrid, but in Warsaw (same time zone) it's 05:22 and 17:33. Obsidian doesn't allow plugins to read your geolocation, so the plugin guesses it or you enter it.",
+	});
+	why.createEl("p", {
+		text: "If you don't enter coordinates, the plugin uses the city of your IP address. If that fails (e.g. you're offline), it uses the main city of your time zone, or London if your time zone has no city (such as UTC). Either can be far from you, especially behind a VPN. The guess buttons above repeat it any time.",
+	});
+
+	const privacy = containerEl.createEl("details", { cls: "sdns-help" });
+	privacy.createEl("summary", { text: "How is my location used?" });
+	privacy.createEl("p", {
+		text: "Sunrise and sunset are calculated on your device. Two free services are used, and nothing else is sent anywhere:",
+	});
+	const services = privacy.createEl("ul");
+	const geojs = services.createEl("li");
+	geojs.createEl("a", { href: "https://www.geojs.io/", text: "GeoJS" });
+	geojs.append(
+		" sees your IP address when the plugin guesses your location from it (on install, or when you press the button)."
+	);
+	const nominatim = services.createEl("li");
+	nominatim.createEl("a", {
+		href: "https://nominatim.org/",
+		text: "OpenStreetMap Nominatim",
+	});
+	nominatim.append(" gets the coordinates you enter, to show the place's name.");
+	privacy.createEl("p", {
+		text: "Still worried? Use the coordinates of a nearby city (within 200 km) instead, though the further away, the less accurate the timing.",
+	});
+	const credit = privacy.createEl("p");
 	credit.append("Place names © ");
 	credit.createEl("a", {
 		href: "https://www.openstreetmap.org/copyright",
