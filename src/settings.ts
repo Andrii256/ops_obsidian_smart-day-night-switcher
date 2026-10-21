@@ -6,14 +6,17 @@ export interface SDNSPluginSettings {
 	/** Minutes, see parseOffsets(). */
 	sunriseOffset: string;
 	sunsetOffset: string;
+	/** Leave the color scheme to Obsidian's own appearance setting. */
+	paused: boolean;
 }
 
-// London
+// London, unless the first run guesses from the time zone (see loadSettings).
 export const DEFAULT_SETTINGS: SDNSPluginSettings = {
 	latitude: "51.507351",
 	longitude: "-0.127758",
 	sunriseOffset: "0",
 	sunsetOffset: "0",
+	paused: false,
 };
 
 export const MAX_OFFSET_MINUTES = 180;
@@ -51,4 +54,32 @@ export function parseOffsets(settings: SDNSPluginSettings): Offsets {
 		sunrise: parseOffset(settings.sunriseOffset),
 		sunset: parseOffset(settings.sunsetOffset),
 	};
+}
+
+export type CoordinatesInput =
+	| { latitude: string; longitude: string; error?: undefined }
+	| { error: string };
+
+/**
+ * Splits "lat, lng" as copied from a map (a comma, semicolon or space
+ * between them) into the two settings, or explains what is wrong with it.
+ */
+export function parseCoordinatesInput(value: string): CoordinatesInput {
+	const parts = value
+		.replace(/°/g, "")
+		.split(/[,;\s]+/)
+		.filter((part) => part !== "");
+	if (parts.length !== 2) {
+		return {
+			error: "Enter latitude and longitude separated by a comma, e.g. 51.5074, -0.1278",
+		};
+	}
+	const [latitude, longitude] = parts;
+	if (parseCoordinate(latitude, 90) === null) {
+		return { error: "Latitude must be a number from -90 to 90" };
+	}
+	if (parseCoordinate(longitude, 180) === null) {
+		return { error: "Longitude must be a number from -180 to 180" };
+	}
+	return { latitude, longitude };
 }

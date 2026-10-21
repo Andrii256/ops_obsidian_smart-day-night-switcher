@@ -15,10 +15,21 @@ const manifest: PluginManifest = {
 	description: "",
 };
 
-/** Creates the plugin with `loadData` returning `savedData`. */
-export function createPlugin(savedData: unknown = null) {
+/**
+ * Creates the plugin with `loadData` returning `savedData`. The default `{}`
+ * is "saved, nothing changed"; pass `null` for a fresh install.
+ */
+export function createPlugin(savedData: unknown = {}) {
 	const plugin = new SDNSPlugin(createApp(), manifest);
 	vi.spyOn(plugin, "loadData").mockResolvedValue(savedData);
 	vi.spyOn(plugin, "saveData").mockResolvedValue();
 	return plugin;
+}
+
+/** Makes `Intl` report `timeZone`; undo with `vi.unstubAllGlobals()`. */
+export function stubTimeZone(timeZone: string) {
+	vi.stubGlobal("Intl", {
+		...Intl,
+		DateTimeFormat: () => ({ resolvedOptions: () => ({ timeZone }) }),
+	});
 }

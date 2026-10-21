@@ -9,6 +9,7 @@ import {
 } from "./settings";
 import { SDNSPluginSettingTab } from "./settings-tab";
 import { getSchemeState } from "./sun-times";
+import { guessFromTimeZone } from "./time-zone";
 
 /** How often to compare the wall clock with the next switch time. */
 const WAKE_CHECK_MS = 60 * 1000;
@@ -46,11 +47,19 @@ export default class SDNSPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			await this.loadData()
-		);
+		const saved = await this.loadData();
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+
+		// Nothing saved yet: a fresh install. Start from the time zone's main
+		// city rather than London, and save it so the guess happens only once.
+		if (saved == null) {
+			const guess = guessFromTimeZone();
+			if (guess) {
+				this.settings.latitude = guess.latitude;
+				this.settings.longitude = guess.longitude;
+				await this.saveData(this.settings);
+			}
+		}
 	}
 
 	async saveSettings() {
@@ -60,6 +69,11 @@ export default class SDNSPlugin extends Plugin {
 
 	checkAndSwitchColorScheme() {
 		this.clearTimeout();
+
+		if (this.settings.paused) {
+			this.setColorScheme(this.defaultColorScheme);
+			return;
+		}
 
 		// Leave the scheme alone until the user enters valid coordinates;
 		// saveSettings re-runs this once they do.

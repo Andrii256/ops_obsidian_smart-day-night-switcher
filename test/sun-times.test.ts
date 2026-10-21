@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { formatTime } from "../src/format";
 import {
+	getNextSwitch,
 	getSchedule,
 	getSchemeState,
 	getSunTimes,
@@ -330,6 +331,44 @@ describe("getSchemeState in polar regions", () => {
 			colorScheme: "dark",
 			msUntilNextChange: HOUR_MS,
 		});
+	});
+});
+
+describe("getNextSwitch", () => {
+	it("is the coming sunset while it is light", () => {
+		const { sunset } = getSunTimes(new Date(summer(12)), LAT, LNG);
+
+		expect(getNextSwitch(summer(12), LAT, LNG)).toEqual({
+			time: sunset,
+			colorScheme: "dark",
+		});
+	});
+
+	it("is the coming sunrise while it is dark, with the offset applied", () => {
+		const offsets = { sunrise: 30, sunset: 0 };
+		const { sunrise } = getSwitchTimes(new Date(summer(12)), LAT, LNG, offsets);
+
+		expect(getNextSwitch(summer(2), LAT, LNG, offsets)).toEqual({
+			time: sunrise,
+			colorScheme: "light",
+		});
+	});
+
+	it("matches the scheme that getSchemeState switches to", () => {
+		for (let h = 0; h < 24; h++) {
+			const now = summer(h);
+			const next = getNextSwitch(now, LAT, LNG);
+			if (!next) throw new Error("expected a switch");
+			const after = getSchemeState(next.time.getTime(), LAT, LNG);
+			expect(after.colorScheme).toBe(next.colorScheme);
+			expect(getSchemeState(now, LAT, LNG).colorScheme).not.toBe(next.colorScheme);
+		}
+	});
+
+	it("is null during the polar night", () => {
+		const now = new Date(2026, 11, 21, 12).getTime();
+
+		expect(getNextSwitch(now, 78.2232, 15.6267)).toBeNull();
 	});
 });
 

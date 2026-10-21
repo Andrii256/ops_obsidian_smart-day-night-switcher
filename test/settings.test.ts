@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_SETTINGS,
 	parseCoordinates,
+	parseCoordinatesInput,
 	parseOffsets,
 } from "../src/settings";
 
@@ -65,5 +66,36 @@ describe("parseOffsets", () => {
 		["infinity", "Infinity"],
 	])("treats %s as 0", (_, value) => {
 		expect(offsets(value, value)).toEqual({ sunrise: 0, sunset: 0 });
+	});
+});
+
+describe("parseCoordinatesInput", () => {
+	it.each([
+		["51.5074, -0.1278"],
+		["51.5074,-0.1278"],
+		["51.5074 -0.1278"],
+		["51.5074; -0.1278"],
+		["  51.5074°, -0.1278° "],
+	])("accepts %j as copied from a map", (input) => {
+		expect(parseCoordinatesInput(input)).toEqual({
+			latitude: "51.5074",
+			longitude: "-0.1278",
+		});
+	});
+
+	it.each([[""], ["51.5074"], ["51.5074, -0.1278, 3"]])(
+		"asks for both values in %j",
+		(input) => {
+			expect(parseCoordinatesInput(input).error).toContain("separated by a comma");
+		}
+	);
+
+	it("rejects an out-of-range or non-numeric latitude", () => {
+		expect(parseCoordinatesInput("91, 0").error).toContain("Latitude");
+		expect(parseCoordinatesInput("abc, 0").error).toContain("Latitude");
+	});
+
+	it("rejects an out-of-range longitude", () => {
+		expect(parseCoordinatesInput("0, 181").error).toContain("Longitude");
 	});
 });
