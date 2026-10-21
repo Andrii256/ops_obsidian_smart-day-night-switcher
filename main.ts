@@ -1,5 +1,5 @@
 // Import the SunCalc library to calculate sun position and light phases
-import SunCalc from "suncalc"; // Documentation: https://www.npmjs.com/package/suncalc
+import * as SunCalc from "suncalc"; // Documentation: https://www.npmjs.com/package/suncalc
 
 import { App, Plugin, PluginSettingTab, Setting, debounce } from "obsidian";
 
@@ -17,16 +17,18 @@ const DEFAULT_SETTINGS: SDNSPluginSettings = {
 	longitude: "-0.127758",
 };
 
+const getColorScheme = (): "dark" | "light" =>
+	document.body.classList.contains("theme-dark") ? "dark" : "light";
+
 export default class SDNSPlugin extends Plugin {
-	private timeout: ReturnType<typeof setTimeout> | null;
-	settings: SDNSPluginSettings;
-	defaultColorScheme: "dark" | "light";
+	private timeout: ReturnType<typeof setTimeout> | null = null;
+	settings: SDNSPluginSettings = { ...DEFAULT_SETTINGS };
+	defaultColorScheme: "dark" | "light" = getColorScheme();
 
 	async onload() {
 		await this.loadSettings();
 		this.addSettingTab(new SDNSPluginSettingTab(this.app, this));
 
-		this.saveDefaultColorScheme();
 		this.checkAndSwitchColorScheme();
 	}
 
@@ -74,10 +76,10 @@ export default class SDNSPlugin extends Plugin {
 
 		let checkDelay: number;
 
-		if (now < dawn) {
+		if (now < times.dawn) {
 			this.setColorScheme("dark");
 			checkDelay = times.dawn - now;
-		} else if (now >= dawn && now < dusk) {
+		} else if (now >= times.dawn && now < times.dusk) {
 			this.setColorScheme("light");
 			checkDelay = times.dusk - now;
 		} else {
@@ -107,13 +109,6 @@ export default class SDNSPlugin extends Plugin {
 				break;
 		}
 		this.app.workspace.trigger("css-change");
-	}
-
-	saveDefaultColorScheme() {
-		const getColorScheme = () =>
-			document.body.classList.contains("theme-dark") ? "dark" : "light";
-
-		this.defaultColorScheme = getColorScheme();
 	}
 }
 
