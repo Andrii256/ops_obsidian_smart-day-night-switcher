@@ -48,10 +48,9 @@ describe("coordinate settings", () => {
 		const { containerEl } = await renderTab();
 
 		const items = settingItems(containerEl);
-		expect(items).toHaveLength(2);
 		expect(
 			items.map((el) => el.querySelector(".setting-item-name")?.textContent)
-		).toEqual(["Latitude", "Longitude"]);
+		).toEqual(["Latitude", "Longitude", "Sunrise offset", "Sunset offset"]);
 		expect(
 			items[0].querySelector(".setting-item-description")?.textContent
 		).toContain("latitude");
@@ -84,8 +83,8 @@ describe("coordinate settings", () => {
 		vi.advanceTimersByTime(1);
 		expect(saveSettings).toHaveBeenCalledOnce();
 		expect(plugin.settings).toEqual({
+			...DEFAULT_SETTINGS,
 			latitude: "48.8566",
-			longitude: DEFAULT_SETTINGS.longitude,
 		});
 	});
 
@@ -111,6 +110,45 @@ describe("coordinate settings", () => {
 
 		expect(saveSettings).toHaveBeenCalledOnce();
 		expect(plugin.settings.latitude).toBe("48.8");
+	});
+});
+
+describe("offset settings", () => {
+	it("explains the sign and the limit", async () => {
+		const { containerEl } = await renderTab();
+		const [, , sunriseItem, sunsetItem] = settingItems(containerEl);
+		const desc = (el: HTMLElement) =>
+			el.querySelector(".setting-item-description")?.textContent;
+
+		expect(desc(sunriseItem)).toContain("after sunrise");
+		expect(desc(sunriseItem)).toContain("minus");
+		expect(desc(sunriseItem)).toContain("180");
+		expect(desc(sunsetItem)).toContain("after sunset");
+	});
+
+	it("shows the current values with a 0 placeholder", async () => {
+		const { containerEl } = await renderTab({
+			sunriseOffset: "30",
+			sunsetOffset: "-30",
+		});
+
+		const sunriseInput = inputFor(containerEl, "Sunrise offset");
+		expect(sunriseInput.value).toBe("30");
+		expect(sunriseInput.placeholder).toBe("0");
+		expect(inputFor(containerEl, "Sunset offset").value).toBe("-30");
+	});
+
+	it.each([
+		["Sunrise offset", "sunriseOffset"],
+		["Sunset offset", "sunsetOffset"],
+	] as const)("saves a new %s", async (name, key) => {
+		const { plugin, containerEl, saveSettings } = await renderTab();
+
+		type(inputFor(containerEl, name), "-45");
+		vi.advanceTimersByTime(300);
+
+		expect(saveSettings).toHaveBeenCalledOnce();
+		expect(plugin.settings[key]).toBe("-45");
 	});
 });
 
@@ -140,8 +178,8 @@ describe("schedule table", () => {
 
 		expect(header).toEqual([
 			"Date",
-			"Sunrise(Light mode will be enabled)",
-			"Sunset(Dark mode will be enabled)",
+			"Light mode(at sunrise)",
+			"Dark mode(at sunset)",
 		]);
 		expect(days).toHaveLength(31);
 	});
@@ -171,6 +209,36 @@ describe("schedule table", () => {
 	});
 });
 
+describe("schedule with offsets", () => {
+	const MINUTE_MS = 60 * 1000;
+
+	it("shows switch times with the offsets applied", async () => {
+		const { containerEl } = await renderTab({
+			sunriseOffset: "30",
+			sunsetOffset: "-15",
+		});
+		const [header, today] = Array.from(
+			containerEl.querySelectorAll("table tr")
+		).map((tr) => Array.from(tr.children).map((cell) => cell.textContent));
+		const { sunrise, sunset } = getSunTimes(
+			NOW,
+			+DEFAULT_SETTINGS.latitude,
+			+DEFAULT_SETTINGS.longitude
+		);
+
+		expect(header).toEqual([
+			"Date",
+			"Light mode(30 min after sunrise)",
+			"Dark mode(15 min before sunset)",
+		]);
+		expect(today).toEqual([
+			formatDate(NOW),
+			formatTime(new Date(sunrise.getTime() + 30 * MINUTE_MS)),
+			formatTime(new Date(sunset.getTime() - 15 * MINUTE_MS)),
+		]);
+	});
+});
+
 describe("schedule with invalid coordinates", () => {
 	it("shows a hint instead of the table", async () => {
 		const { containerEl } = await renderTab({ latitude: "-", longitude: "0" });
@@ -188,7 +256,7 @@ describe("display", () => {
 		tab.display();
 
 		expect(containerEl.innerHTML).toBe(before);
-		expect(settingItems(containerEl)).toHaveLength(2);
+		expect(settingItems(containerEl)).toHaveLength(4);
 		expect(containerEl.querySelectorAll("table")).toHaveLength(1);
 	});
 });

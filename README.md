@@ -32,6 +32,10 @@ _Note: Obsidian doesn’t allow plugins to access your geolocation, that is why 
 
 The plugin defaults to London’s coordinates, switching themes based on sunrise/sunset there.
 
+### Can it switch a bit before or after sunrise/sunset?
+
+Yes. Set a sunrise and/or sunset offset (up to 3 hours) in the settings, e.g. to turn on dark mode 10 minutes before sunset.
+
 ### How does it use location data?
 
 The plugin uses your latitude and longitude in a formula to calculate sunrise/sunset times locally on your device. No data is sent anywhere. Still worried? Feel free to use coordinates of a nearby city (within 200 km) instead—though the further away, the less accurate the timing.
@@ -44,8 +48,6 @@ Feel free to open an issue in [this repository](https://github.com/Andrii256/ops
 
 If this plugin becomes popular enough (downloaded by over 5,000 people), I’ll make an effort to implement the following features:
 
--   Option to set an offset  
-    If you’d like the dark theme to activate, for example, 10 minutes / 20 minutes and etc. before sunset or after sunset, you’ll be able to specify this offset in the settings;
 -   Option to switch not only the color scheme but also the theme itself (a separate theme for nighttime and one for daytime);
 -   Smooth color transition  
     The background color won’t abruptly turn dark black. As the sun begins to set, the plugin will gradually darken the background—slightly at first, then progressively darker until sunset;

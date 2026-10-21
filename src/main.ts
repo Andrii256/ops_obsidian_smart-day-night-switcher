@@ -4,6 +4,7 @@ import { ColorScheme, getColorScheme, setColorScheme } from "./color-scheme";
 import {
 	DEFAULT_SETTINGS,
 	parseCoordinates,
+	parseOffsets,
 	SDNSPluginSettings,
 } from "./settings";
 import { SDNSPluginSettingTab } from "./settings-tab";
@@ -68,7 +69,8 @@ export default class SDNSPlugin extends Plugin {
 		const { colorScheme, msUntilNextChange } = getSchemeState(
 			Date.now(),
 			coordinates.latitude,
-			coordinates.longitude
+			coordinates.longitude,
+			parseOffsets(this.settings)
 		);
 
 		this.setColorScheme(colorScheme);
