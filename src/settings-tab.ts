@@ -4,6 +4,7 @@ import {
 	PluginSettingTab,
 	Setting,
 	TextComponent,
+	ToggleComponent,
 	debounce,
 } from "obsidian";
 
@@ -44,6 +45,7 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 	private coordinatesText: TextComponent | null = null;
 	private coordinatesErrorEl: HTMLElement | null = null;
 	private guessButton: ButtonComponent | null = null;
+	private pauseToggle: ToggleComponent | null = null;
 
 	constructor(app: App, plugin: SDNSPlugin) {
 		super(app, plugin);
@@ -79,6 +81,12 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 		this.updateGuessButton();
 	}
 
+	/** Shows settings changed elsewhere, e.g. by the pause command's hotkey. */
+	update() {
+		this.pauseToggle?.setValue(this.plugin.settings.paused);
+		this.refresh();
+	}
+
 	private async save() {
 		await this.plugin.saveSettings();
 		this.refresh();
@@ -91,12 +99,20 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 				"Use Obsidian's own appearance setting until you turn this off."
 			)
 			.addToggle((toggle) =>
-				toggle
+				(this.pauseToggle = toggle)
 					.setValue(this.plugin.settings.paused)
 					.onChange(async (paused) => {
+						// Obsidian calls this from setValue() too, e.g. in update().
+						if (paused === this.plugin.settings.paused) return;
 						this.plugin.settings.paused = paused;
 						await this.save();
 					})
+			)
+			.addButton((button) =>
+				button
+					.setButtonText("Set hotkey")
+					.setTooltip("Assign a hotkey to pause or resume")
+					.onClick(() => openHotkeys(this.app, HOTKEYS_QUERY))
 			);
 	}
 
@@ -314,6 +330,32 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 			this.renderSchedule();
 		});
 	}
+}
+
+/** Search text that finds this plugin's commands in Settings → Hotkeys. */
+const HOTKEYS_QUERY = "DayNight";
+
+/** The bits of Obsidian's settings modal used below; not in the public API. */
+interface SettingModal {
+	openTabById?(
+		id: string
+	): { searchComponent?: { inputEl?: HTMLInputElement } } | undefined;
+}
+
+/**
+ * Opens Settings → Hotkeys and types `query` into its search box. Obsidian
+ * has no API for this, so each step is optional: at worst the tab opens
+ * unfiltered, or nothing happens. The search box filters on "input", so
+ * firing that event works like the user typing, whatever the tab's own
+ * refresh methods are called in this version.
+ */
+function openHotkeys(app: App, query: string) {
+	const { setting } = app as unknown as { setting?: SettingModal };
+	const inputEl = setting?.openTabById?.("hotkeys")?.searchComponent?.inputEl;
+	if (!inputEl) return;
+	inputEl.value = query;
+	inputEl.dispatchEvent(new Event("input"));
+	inputEl.focus();
 }
 
 function addCoordinatesHelp(containerEl: HTMLElement) {

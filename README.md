@@ -38,7 +38,7 @@ Yes. Set a sunrise and/or sunset offset (up to 3 hours) in the settings, e.g. to
 
 ### Can I turn it off for a while?
 
-Yes. Turn on “Pause automatic switching” in the settings, and Obsidian’s own light/dark setting applies until you turn it off.
+Yes. Turn on “Pause automatic switching” in the settings, and Obsidian’s own light/dark setting applies until you turn it off. The “Pause or resume automatic switching” command does the same, and the “Set hotkey” button next to the toggle lets you give it a hotkey.
 
 ### How does it use location data?
 

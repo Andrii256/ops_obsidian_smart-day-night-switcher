@@ -133,6 +133,26 @@ describe("pause", () => {
 		vi.advanceTimersByTime(sunrise.getTime() - Date.now());
 		expect(getColorScheme()).toBe("light");
 	});
+
+	it("has a command, for a hotkey, that pauses and resumes", async () => {
+		vi.setSystemTime(summer(2));
+		const plugin = createPlugin();
+		const addCommand = vi.spyOn(plugin, "addCommand");
+		await plugin.onload();
+		const command = addCommand.mock.calls[0]?.[0];
+		expect(command?.name).toBe("Pause or resume automatic switching");
+
+		await command?.callback?.();
+		expect(plugin.settings.paused).toBe(true);
+		expect(plugin.saveData).toHaveBeenLastCalledWith(
+			expect.objectContaining({ paused: true })
+		);
+		expect(getColorScheme()).toBe("light");
+
+		await command?.callback?.();
+		expect(plugin.settings.paused).toBe(false);
+		expect(getColorScheme()).toBe("dark");
+	});
 });
 
 describe("scheduling", () => {

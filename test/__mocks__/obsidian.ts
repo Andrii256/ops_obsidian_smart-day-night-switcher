@@ -38,6 +38,14 @@ export class Plugin {
 	async saveData(data: any): Promise<void> {}
 
 	addSettingTab(settingTab: PluginSettingTab): void {}
+
+	addCommand(command: any): any {
+		return command;
+	}
+}
+
+export class Notice {
+	constructor(message: string | DocumentFragment, duration?: number) {}
 }
 
 export class PluginSettingTab {
@@ -137,13 +145,18 @@ export class ButtonComponent {
 		return this;
 	}
 
+	setTooltip(tooltip: string): this {
+		this.buttonEl.setAttribute("aria-label", tooltip);
+		return this;
+	}
+
 	onClick(callback: (evt: MouseEvent) => any): this {
 		this.buttonEl.addEventListener("click", callback);
 		return this;
 	}
 }
 
-class ToggleComponent {
+export class ToggleComponent {
 	toggleEl: HTMLInputElement;
 
 	constructor(containerEl: HTMLElement) {

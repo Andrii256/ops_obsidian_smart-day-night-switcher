@@ -263,6 +263,53 @@ describe("pause", () => {
 		expect(toggle(containerEl).checked).toBe(true);
 		expect(statusText(containerEl)).toBe("⏸ Automatic switching is paused");
 	});
+
+	it("shows a pause or resume from the command's hotkey right away", async () => {
+		const plugin = createPlugin();
+		const addCommand = vi.spyOn(plugin, "addCommand");
+		const addSettingTab = vi.spyOn(plugin, "addSettingTab");
+		await plugin.onload();
+		const tab = addSettingTab.mock.calls[0]?.[0] as SDNSPluginSettingTab;
+		tab.display();
+		const { containerEl } = tab;
+		const command = addCommand.mock.calls[0]?.[0];
+
+		await command?.callback?.();
+		expect(toggle(containerEl).checked).toBe(true);
+		expect(statusText(containerEl)).toBe("⏸ Automatic switching is paused");
+
+		await command?.callback?.();
+		expect(toggle(containerEl).checked).toBe(false);
+		expect(statusText(containerEl)).toContain("now");
+		plugin.unload();
+	});
+
+	const hotkeyButton = (containerEl: HTMLElement) =>
+		settingNamed(containerEl, "Pause automatic switching").querySelector(
+			"button"
+		);
+
+	it("opens the hotkeys tab and searches for DayNight", async () => {
+		const { plugin, containerEl } = await renderTab();
+		const inputEl = document.createElement("input");
+		const typed: string[] = [];
+		inputEl.addEventListener("input", () => typed.push(inputEl.value));
+		const openTabById = vi.fn(() => ({ searchComponent: { inputEl } }));
+		Object.assign(plugin.app, { setting: { openTabById } });
+
+		expect(hotkeyButton(containerEl)?.textContent).toBe("Set hotkey");
+		hotkeyButton(containerEl)?.click();
+
+		expect(openTabById).toHaveBeenCalledWith("hotkeys");
+		// The "input" event is what makes Obsidian filter the list.
+		expect(typed).toEqual(["DayNight"]);
+	});
+
+	it("does nothing if Obsidian's settings internals are missing", async () => {
+		const { containerEl } = await renderTab();
+
+		expect(() => hotkeyButton(containerEl)?.click()).not.toThrow();
+	});
 });
 
 describe("guess from time zone", () => {

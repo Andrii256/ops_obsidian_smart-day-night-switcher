@@ -21,6 +21,12 @@ export const DEFAULT_SETTINGS: SDNSPluginSettings = {
 
 export const MAX_OFFSET_MINUTES = 180;
 
+/** The command that flips `paused`, so it can have a hotkey. */
+export const TOGGLE_PAUSE_COMMAND = {
+	id: "toggle-pause",
+	name: "Pause or resume automatic switching",
+};
+
 export interface Coordinates {
 	latitude: number;
 	longitude: number;
