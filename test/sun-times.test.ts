@@ -2,13 +2,20 @@ import * as SunCalc from "suncalc";
 import { describe, expect, it } from "vitest";
 
 import { formatTime } from "../src/format";
-import { getSchedule, getSchemeState, getSunTimes } from "../src/sun-times";
+import {
+	getSchedule,
+	getSchemeState,
+	getSunTimes,
+	getSwitchTimes,
+	Offsets,
+} from "../src/sun-times";
 
 // London (the plugin default); tests run with TZ=Europe/London.
 const LAT = 51.507351;
 const LNG = -0.127758;
 
-const HOUR_MS = 60 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
 /** Local wall-clock time on 21 Jun 2026 (BST), as epoch ms. */
@@ -181,6 +188,128 @@ describe("light while the sun is up, dark while it is down", () => {
 	);
 });
 
+describe("getSchemeState with offsets", () => {
+	const { sunrise, sunset } = getSunTimes(new Date(summer(12)), LAT, LNG);
+	const tomorrowSunrise = getSunTimes(new Date(2026, 5, 22, 12), LAT, LNG).sunrise;
+	const offsets: Offsets = { sunrise: 30, sunset: -30 };
+	const lightAt = sunrise.getTime() + 30 * MINUTE_MS;
+	const darkAt = sunset.getTime() - 30 * MINUTE_MS;
+
+	it("stays dark until 30 minutes after sunrise", () => {
+		const now = sunrise.getTime() + MINUTE_MS;
+
+		expect(getSchemeState(now, LAT, LNG, offsets)).toEqual({
+			colorScheme: "dark",
+			msUntilNextChange: lightAt - now,
+		});
+	});
+
+	it("switches to dark 30 minutes before sunset", () => {
+		expect(getSchemeState(darkAt - 1, LAT, LNG, offsets)).toEqual({
+			colorScheme: "light",
+			msUntilNextChange: 1,
+		});
+		expect(getSchemeState(darkAt, LAT, LNG, offsets)).toEqual({
+			colorScheme: "dark",
+			msUntilNextChange: tomorrowSunrise.getTime() + 30 * MINUTE_MS - darkAt,
+		});
+	});
+
+	it("can switch before sunrise and after sunset", () => {
+		const early: Offsets = { sunrise: -60, sunset: 60 };
+
+		expect(
+			getSchemeState(sunrise.getTime() - 30 * MINUTE_MS, LAT, LNG, early)
+				.colorScheme
+		).toBe("light");
+		expect(
+			getSchemeState(sunset.getTime() + 30 * MINUTE_MS, LAT, LNG, early)
+				.colorScheme
+		).toBe("light");
+	});
+
+	it("is unchanged with zero offsets", () => {
+		const now = summer(12);
+
+		expect(getSchemeState(now, LAT, LNG, { sunrise: 0, sunset: 0 })).toEqual(
+			getSchemeState(now, LAT, LNG)
+		);
+	});
+});
+
+/**
+ * The README's offset promise, checked against an independent oracle: light
+ * from sunrise + sunrise offset to sunset + sunset offset of any day. Short
+ * days and nights near the poles are included, where large offsets make a
+ * light or dark period vanish entirely.
+ */
+describe("light from offset sunrise to offset sunset", () => {
+	const expectedScheme = (t: number, lat: number, lng: number, o: Offsets) => {
+		for (let k = -2; k <= 2; k++) {
+			const { sunrise, sunset } = SunCalc.getTimes(
+				new Date(t + k * DAY_MS),
+				lat,
+				lng
+			);
+			const from = sunrise.getTime() + o.sunrise * MINUTE_MS;
+			const to = sunset.getTime() + o.sunset * MINUTE_MS;
+			if (from <= t && t < to) return "light";
+		}
+		return "dark";
+	};
+
+	const cases: [string, number, number, Offsets][] = [
+		["London, +30/-30", LAT, LNG, { sunrise: 30, sunset: -30 }],
+		["London, -45/+20", LAT, LNG, { sunrise: -45, sunset: 20 }],
+		["Sydney, +180/-180", -33.87, 151.21, { sunrise: 180, sunset: -180 }],
+		// ~4 h winter days vanish; ~3 h summer nights shrink.
+		["Reykjavik, +150/-150", 64.15, -21.94, { sunrise: 150, sunset: -150 }],
+		// ~3 h summer nights vanish.
+		["Reykjavik, -90/+90", 64.15, -21.94, { sunrise: -90, sunset: 90 }],
+	];
+
+	it.each(cases)("%s, through 2026", (_, lat, lng, offsets) => {
+		const start = Date.UTC(2026, 0, 1);
+		const step = 37 * 60 * 1000 + 13 * 1000;
+		for (let now = start; now < start + 365 * DAY_MS; now += step) {
+			const { colorScheme, msUntilNextChange } = getSchemeState(
+				now,
+				lat,
+				lng,
+				offsets
+			);
+
+			expect(msUntilNextChange).toBeGreaterThan(0);
+			expect(msUntilNextChange).toBeLessThanOrEqual(2 * DAY_MS);
+			const expected = expectedScheme(now, lat, lng, offsets);
+			if (colorScheme !== expected) {
+				throw new Error(
+					`${new Date(now).toISOString()}: expected ${expected}, got ${colorScheme}`
+				);
+			}
+		}
+	});
+
+	// While a day or night has vanished there is nothing to switch to, so the
+	// plugin re-checks within an hour (or a day) instead.
+	it.each(cases)(
+		"%s: the next check lands on a switch or is a re-check",
+		(_, lat, lng, offsets) => {
+			const start = Date.UTC(2026, 0, 1);
+			for (let now = start; now < start + 365 * DAY_MS; now += 5 * HOUR_MS + 7 * 60 * 1000) {
+				const { colorScheme, msUntilNextChange } = getSchemeState(now, lat, lng, offsets);
+				const at = now + msUntilNextChange;
+
+				if (expectedScheme(at, lat, lng, offsets) === colorScheme) {
+					expect(msUntilNextChange <= HOUR_MS || msUntilNextChange === DAY_MS).toBe(true);
+				} else {
+					expect(expectedScheme(at - 1, lat, lng, offsets)).toBe(colorScheme);
+				}
+			}
+		}
+	);
+});
+
 describe("getSchemeState in polar regions", () => {
 	// Longyearbyen, Svalbard: midnight sun in June, polar night in December.
 	const SVALBARD_LAT = 78.2232;
@@ -220,6 +349,18 @@ describe("getSchedule", () => {
 
 		for (const { date, sunrise, sunset } of schedule) {
 			expect({ sunrise, sunset }).toEqual(getSunTimes(date, LAT, LNG));
+		}
+	});
+
+	it("applies the offsets to each entry", () => {
+		const offsets: Offsets = { sunrise: 30, sunset: -15 };
+		const schedule = getSchedule(new Date(2026, 9, 21, 12), 3, LAT, LNG, offsets);
+
+		for (const { date, sunrise, sunset } of schedule) {
+			const raw = getSunTimes(date, LAT, LNG);
+			expect(sunrise.getTime()).toBe(raw.sunrise.getTime() + 30 * MINUTE_MS);
+			expect(sunset.getTime()).toBe(raw.sunset.getTime() - 15 * MINUTE_MS);
+			expect({ sunrise, sunset }).toEqual(getSwitchTimes(date, LAT, LNG, offsets));
 		}
 	});
 

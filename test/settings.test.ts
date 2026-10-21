@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_SETTINGS, parseCoordinates } from "../src/settings";
+import {
+	DEFAULT_SETTINGS,
+	parseCoordinates,
+	parseOffsets,
+} from "../src/settings";
 
 const parse = (latitude: string, longitude: string) =>
-	parseCoordinates({ latitude, longitude });
+	parseCoordinates({ ...DEFAULT_SETTINGS, latitude, longitude });
 
 describe("parseCoordinates", () => {
 	it("parses the defaults", () => {
@@ -32,5 +36,34 @@ describe("parseCoordinates", () => {
 		["infinity", "0", "Infinity"],
 	])("rejects %s", (_, latitude, longitude) => {
 		expect(parse(latitude, longitude)).toBeNull();
+	});
+});
+
+describe("parseOffsets", () => {
+	const offsets = (sunriseOffset: string, sunsetOffset: string) =>
+		parseOffsets({ ...DEFAULT_SETTINGS, sunriseOffset, sunsetOffset });
+
+	it("defaults to switching exactly at sunrise and sunset", () => {
+		expect(parseOffsets(DEFAULT_SETTINGS)).toEqual({ sunrise: 0, sunset: 0 });
+	});
+
+	it("parses minutes after (positive) and before (negative)", () => {
+		expect(offsets("30", "-30")).toEqual({ sunrise: 30, sunset: -30 });
+	});
+
+	it("accepts surrounding whitespace and the ±180 limits", () => {
+		expect(offsets(" -180 ", "180")).toEqual({ sunrise: -180, sunset: 180 });
+	});
+
+	it.each([
+		["empty", ""],
+		["blank", "  "],
+		["a lone minus sign", "-"],
+		["trailing garbage", "30m"],
+		["over 180", "181"],
+		["under -180", "-180.5"],
+		["infinity", "Infinity"],
+	])("treats %s as 0", (_, value) => {
+		expect(offsets(value, value)).toEqual({ sunrise: 0, sunset: 0 });
 	});
 });

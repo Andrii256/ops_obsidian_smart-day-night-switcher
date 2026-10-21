@@ -2,7 +2,12 @@ import { App, PluginSettingTab, Setting, debounce } from "obsidian";
 
 import { formatDate, formatTime } from "./format";
 import type SDNSPlugin from "./main";
-import { parseCoordinates, SDNSPluginSettings } from "./settings";
+import {
+	MAX_OFFSET_MINUTES,
+	parseCoordinates,
+	parseOffsets,
+	SDNSPluginSettings,
+} from "./settings";
 import { getSchedule } from "./sun-times";
 
 const SCHEDULE_DAYS = 31;
@@ -23,25 +28,26 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 			text: "Please enter the latitude and longitude of your approximate location (coords of any city within ±200 km)",
 		});
 
-		this.addCoordinateSetting(containerEl, "latitude", "Latitude");
-		this.addCoordinateSetting(containerEl, "longitude", "Longitude");
+		this.addTextSetting(containerEl, "latitude", "Latitude", "Latitude");
+		this.addTextSetting(containerEl, "longitude", "Longitude", "Longitude");
 		addAdditionalDescription(containerEl);
+		this.addTextSetting(containerEl, "sunriseOffset", "Sunrise offset", "0");
+		this.addTextSetting(containerEl, "sunsetOffset", "Sunset offset", "0");
 		this.addSchedule(containerEl);
 	}
 
-	private addCoordinateSetting(
+	private addTextSetting(
 		containerEl: HTMLElement,
 		key: keyof SDNSPluginSettings,
-		name: string
+		name: string,
+		placeholder: string
 	) {
 		new Setting(containerEl)
 			.setName(name)
-			.setDesc(
-				`Please enter the ${key} of your approximate location (within ±200 km)`
-			)
+			.setDesc(settingDescriptions[key])
 			.addText((text) =>
 				text
-					.setPlaceholder(name)
+					.setPlaceholder(placeholder)
 					.setValue(this.plugin.settings[key])
 					.onChange(
 						debounce(async (value) => {
@@ -77,20 +83,26 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 		const tbody = table.createEl("tbody");
 		const headerRow = tbody.createEl("tr");
 		headerRow.createEl("th", { text: "Date" });
+		const offsets = parseOffsets(this.plugin.settings);
 		const sunriseTh = headerRow.createEl("th");
-		sunriseTh.createEl("span", { text: "Sunrise" });
+		sunriseTh.createEl("span", { text: "Light mode" });
 		sunriseTh.createEl("br");
-		sunriseTh.createEl("small", { text: "(Light mode will be enabled)" });
+		sunriseTh.createEl("small", {
+			text: `(${describeOffset(offsets.sunrise, "sunrise")})`,
+		});
 		const sunsetTh = headerRow.createEl("th");
-		sunsetTh.createEl("span", { text: "Sunset" });
+		sunsetTh.createEl("span", { text: "Dark mode" });
 		sunsetTh.createEl("br");
-		sunsetTh.createEl("small", { text: "(Dark mode will be enabled)" });
+		sunsetTh.createEl("small", {
+			text: `(${describeOffset(offsets.sunset, "sunset")})`,
+		});
 
 		const schedule = getSchedule(
 			new Date(),
 			SCHEDULE_DAYS,
 			coordinates.latitude,
-			coordinates.longitude
+			coordinates.longitude,
+			offsets
 		);
 		for (const { date, sunrise, sunset } of schedule) {
 			const row = tbody.createEl("tr");
@@ -99,6 +111,24 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 			row.createEl("td", { text: formatTime(sunset) });
 		}
 	}
+}
+
+const offsetDescription = (event: string, scheme: string) =>
+	`Minutes after ${event} to switch to ${scheme} mode; use a minus sign to switch before it (up to ±${MAX_OFFSET_MINUTES}). Leave empty or 0 to switch exactly at ${event}.`;
+
+const settingDescriptions: Record<keyof SDNSPluginSettings, string> = {
+	latitude:
+		"Please enter the latitude of your approximate location (within ±200 km)",
+	longitude:
+		"Please enter the longitude of your approximate location (within ±200 km)",
+	sunriseOffset: offsetDescription("sunrise", "light"),
+	sunsetOffset: offsetDescription("sunset", "dark"),
+};
+
+/** e.g. "at sunrise", "30 min after sunrise", "15 min before sunset" */
+function describeOffset(minutes: number, event: string): string {
+	if (minutes === 0) return `at ${event}`;
+	return `${Math.abs(minutes)} min ${minutes > 0 ? "after" : "before"} ${event}`;
 }
 
 function addAdditionalDescription(containerEl: HTMLElement) {

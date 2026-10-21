@@ -39,8 +39,8 @@ describe("loadSettings", () => {
 		await plugin.loadSettings();
 
 		expect(plugin.settings).toEqual({
+			...DEFAULT_SETTINGS,
 			latitude: "48.8566",
-			longitude: DEFAULT_SETTINGS.longitude,
 		});
 	});
 
@@ -163,8 +163,8 @@ describe("saveSettings", () => {
 		await plugin.saveSettings();
 
 		expect(plugin.saveData).toHaveBeenCalledWith({
+			...DEFAULT_SETTINGS,
 			latitude: "48.8566",
-			longitude: DEFAULT_SETTINGS.longitude,
 		});
 	});
 
@@ -180,6 +180,48 @@ describe("saveSettings", () => {
 
 		expect(getColorScheme()).toBe("dark");
 		expect(vi.getTimerCount()).toBe(TIMERS_WHILE_RUNNING);
+	});
+});
+
+describe("offsets", () => {
+	const MINUTE_MS = 60 * 1000;
+
+	it("switches 30 minutes after sunrise and 30 minutes before sunset", async () => {
+		vi.setSystemTime(summer(2));
+		const plugin = createPlugin({ sunriseOffset: "30", sunsetOffset: "-30" });
+		await plugin.onload();
+
+		vi.advanceTimersByTime(sunrise.getTime() + 30 * MINUTE_MS - Date.now() - 1);
+		expect(getColorScheme()).toBe("dark");
+		vi.advanceTimersByTime(1);
+		expect(getColorScheme()).toBe("light");
+
+		vi.advanceTimersByTime(sunset.getTime() - 30 * MINUTE_MS - Date.now() - 1);
+		expect(getColorScheme()).toBe("light");
+		vi.advanceTimersByTime(1);
+		expect(getColorScheme()).toBe("dark");
+	});
+
+	it("re-applies the scheme when an offset is saved", async () => {
+		vi.setSystemTime(new Date(sunset.getTime() + 10 * MINUTE_MS));
+		const plugin = createPlugin();
+		await plugin.onload();
+		expect(getColorScheme()).toBe("dark");
+
+		plugin.settings.sunsetOffset = "20";
+		await plugin.saveSettings();
+		expect(getColorScheme()).toBe("light");
+
+		vi.advanceTimersByTime(10 * MINUTE_MS);
+		expect(getColorScheme()).toBe("dark");
+	});
+
+	it("ignores an invalid offset", async () => {
+		vi.setSystemTime(new Date(sunset.getTime() + 10 * MINUTE_MS));
+		const plugin = createPlugin({ sunsetOffset: "20 min" });
+		await plugin.onload();
+
+		expect(getColorScheme()).toBe("dark");
 	});
 });
 
