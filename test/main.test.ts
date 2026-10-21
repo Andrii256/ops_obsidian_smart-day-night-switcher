@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getColorScheme } from "../src/color-scheme";
+import { locateByIp } from "../src/locate";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { SDNSPluginSettingTab } from "../src/settings-tab";
 import { getSunTimes } from "../src/sun-times";
 import { createPlugin, stubTimeZone } from "./helpers";
+
+vi.mock("../src/locate", () => ({
+	locateByIp: vi.fn(),
+	lookUpPlaceName: vi.fn(),
+}));
 
 const LAT = +DEFAULT_SETTINGS.latitude;
 const LNG = +DEFAULT_SETTINGS.longitude;
@@ -14,12 +20,21 @@ const summer = (h: number, m = 0) => new Date(2026, 5, 21, h, m);
 const { sunrise, sunset } = getSunTimes(summer(12), LAT, LNG);
 const tomorrowSunrise = getSunTimes(new Date(2026, 5, 22, 12), LAT, LNG).sunrise;
 
+// Tests run in Europe/London; zone.tab puts it at 51°30'30"N 0°07'31"W.
+const TIME_ZONE_GUESS = {
+	...DEFAULT_SETTINGS,
+	latitude: "51.5083",
+	longitude: "-0.1253",
+	locationName: "London",
+};
+
 /** The pending switch plus the once-a-minute wake check. */
 const TIMERS_WHILE_RUNNING = 2;
 
 beforeEach(() => {
 	vi.useFakeTimers();
 	document.body.className = "theme-light";
+	vi.mocked(locateByIp).mockReset().mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -35,14 +50,11 @@ describe("loadSettings", () => {
 		expect(plugin.saveData).not.toHaveBeenCalled();
 	});
 
-	it("guesses coordinates from the time zone on a fresh install, once", async () => {
-		// Tests run in Europe/London; zone.tab puts it at 51°30'30"N 0°07'31"W.
+	it("starts a fresh install from the time zone's main city", async () => {
 		const plugin = createPlugin(null);
 		await plugin.loadSettings();
 
-		const guessed = { ...DEFAULT_SETTINGS, latitude: "51.5083", longitude: "-0.1253" };
-		expect(plugin.settings).toEqual(guessed);
-		expect(plugin.saveData).toHaveBeenCalledWith(guessed);
+		expect(plugin.settings).toEqual(TIME_ZONE_GUESS);
 	});
 
 	it("falls back to London when the time zone has no city", async () => {
@@ -71,6 +83,92 @@ describe("loadSettings", () => {
 		plugin.settings.latitude = "3";
 
 		expect(DEFAULT_SETTINGS).toEqual(before);
+	});
+});
+
+describe("first location guess", () => {
+	const KYIV = {
+		latitude: "50.4547",
+		longitude: "30.5238",
+		locationName: "Kyiv, Ukraine",
+	};
+
+	it("uses the IP address's location and saves it", async () => {
+		vi.mocked(locateByIp).mockResolvedValue(KYIV);
+		const plugin = createPlugin(null);
+		await plugin.onload();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(plugin.settings).toEqual({ ...DEFAULT_SETTINGS, ...KYIV });
+		expect(plugin.saveData).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, ...KYIV });
+	});
+
+	it("saves the time zone guess if the IP lookup fails", async () => {
+		const plugin = createPlugin(null);
+		await plugin.onload();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(plugin.saveData).toHaveBeenCalledOnce();
+		expect(plugin.saveData).toHaveBeenCalledWith(TIME_ZONE_GUESS);
+	});
+
+	it("happens only once", async () => {
+		const plugin = createPlugin({ latitude: "1", longitude: "2" });
+		await plugin.onload();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(locateByIp).not.toHaveBeenCalled();
+		expect(plugin.saveData).not.toHaveBeenCalled();
+	});
+
+	it("switches with the time zone guess until the IP lookup answers", async () => {
+		// Noon in London is still before sunrise in Honolulu (UTC-10).
+		vi.setSystemTime(summer(12));
+		let answer: (location: typeof KYIV) => void = () => undefined;
+		vi.mocked(locateByIp).mockReturnValue(
+			new Promise((resolve) => (answer = resolve))
+		);
+		const plugin = createPlugin(null);
+		await plugin.onload();
+
+		expect(getColorScheme()).toBe("light");
+
+		answer({ latitude: "21.3069", longitude: "-157.8583", locationName: "Honolulu" });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(getColorScheme()).toBe("dark");
+	});
+
+	it("keeps coordinates the user entered while the IP lookup ran", async () => {
+		let answer: (location: typeof KYIV) => void = () => undefined;
+		vi.mocked(locateByIp).mockReturnValue(
+			new Promise((resolve) => (answer = resolve))
+		);
+		const plugin = createPlugin(null);
+		await plugin.onload();
+		plugin.settings.latitude = "48.8566";
+		plugin.settings.longitude = "2.3522";
+
+		answer(KYIV);
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(plugin.settings.latitude).toBe("48.8566");
+		expect(plugin.settings.longitude).toBe("2.3522");
+	});
+
+	it("does nothing if the plugin is unloaded before the IP lookup answers", async () => {
+		let answer: (location: typeof KYIV) => void = () => undefined;
+		vi.mocked(locateByIp).mockReturnValue(
+			new Promise((resolve) => (answer = resolve))
+		);
+		const plugin = createPlugin(null);
+		await plugin.onload();
+		plugin.unload();
+
+		answer(KYIV);
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(plugin.saveData).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(0);
 	});
 });
 

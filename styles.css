@@ -5,6 +5,11 @@
 	background-color: var(--background-secondary);
 }
 
+.sdns-place {
+	margin-top: var(--size-4-1);
+	color: var(--text-normal);
+}
+
 .sdns-error {
 	margin-top: var(--size-4-1);
 	color: var(--text-error);

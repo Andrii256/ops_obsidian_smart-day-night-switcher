@@ -44,6 +44,11 @@ export class Plugin {
 	}
 }
 
+/** Tests have no network; mock this (or ../src/locate) to answer. */
+export function requestUrl(request: any): any {
+	return Promise.reject(new Error(`No network in tests: ${request?.url ?? request}`));
+}
+
 export class Notice {
 	constructor(message: string | DocumentFragment, duration?: number) {}
 }
