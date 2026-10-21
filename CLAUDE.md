@@ -13,6 +13,7 @@ Obsidian community plugin ("Smart DayNight switcher", id `smart-day-night-switch
 - `npm run lint` — ESLint over `src/` and `test/` (config in `.eslintrc`).
 - `npm test` — Vitest, single run. `npm run test:watch` for watch mode; `npx vitest run test/sun-times.test.ts` or `-t "<name>"` for one file/test.
 - `npm version <patch|minor|major>` — bumps `package.json`, then `version-bump.mjs` syncs `manifest.json` version and adds an entry to `versions.json` (version → `minAppVersion`). Keep these three files in sync when releasing.
+- `npm run release -- <patch|minor|major>` — `release.mjs`: requires a clean `master` in sync with origin, runs lint/test/build, then `npm version`, pushes commit + tag, and creates the GitHub release (tag = version, no `v` prefix) with `main.js` and `manifest.json` attached via `gh`.
 
 ## Testing
 
