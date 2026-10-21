@@ -1,6 +1,7 @@
 import {
 	App,
 	ButtonComponent,
+	Notice,
 	PluginSettingTab,
 	Setting,
 	TextComponent,
@@ -10,6 +11,7 @@ import {
 
 import { ColorScheme } from "./color-scheme";
 import { formatDate, formatDay, formatOffset, formatTime } from "./format";
+import { LocationSettings, locateByIp, lookUpPlaceName } from "./locate";
 import type SDNSPlugin from "./main";
 import {
 	MAX_OFFSET_MINUTES,
@@ -22,6 +24,14 @@ import { guessFromTimeZone } from "./time-zone";
 
 const SCHEDULE_DAYS = 31;
 const SCHEDULE_DAYS_COLLAPSED = 7;
+/** Wait for typing to settle; Nominatim allows one request a second. */
+const PLACE_LOOKUP_DELAY_MS = 1500;
+
+const coordinatesKey = ({
+	latitude,
+	longitude,
+}: Pick<LocationSettings, "latitude" | "longitude">) =>
+	`${latitude}, ${longitude}`;
 
 type Direction = "before" | "after";
 
@@ -44,6 +54,16 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 	private scheduleExpanded = false;
 	private coordinatesText: TextComponent | null = null;
 	private coordinatesErrorEl: HTMLElement | null = null;
+	private placeEl: HTMLElement | null = null;
+	/** The coordinates whose place name is being looked up. */
+	private lookingUpPlaceFor: string | null = null;
+	/** The coordinates whose place name couldn't be found, so it isn't asked for again. */
+	private placeNotFoundFor: string | null = null;
+	private lookUpPlaceSoon = debounce(
+		() => this.lookUpPlace(),
+		PLACE_LOOKUP_DELAY_MS,
+		true
+	);
 	private guessButton: ButtonComponent | null = null;
 	private pauseToggle: ToggleComponent | null = null;
 
@@ -61,6 +81,7 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl).setName("Location").setHeading();
 		this.addCoordinatesSetting(containerEl);
+		this.addIpSetting(containerEl);
 		this.addTimeZoneSetting(containerEl);
 		addCoordinatesHelp(containerEl);
 
@@ -72,13 +93,43 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 		this.scheduleEl = containerEl.createEl("div");
 
 		this.refresh();
+
+		// e.g. settings saved before place names existed.
+		const settings = this.plugin.settings;
+		const key = coordinatesKey(settings);
+		if (
+			settings.locationName === "" &&
+			parseCoordinates(settings) !== null &&
+			this.lookingUpPlaceFor !== key &&
+			this.placeNotFoundFor !== key
+		) {
+			void this.lookUpPlace();
+		}
 	}
 
 	/** Re-renders what depends on the settings, leaving the inputs (and their focus) alone. */
 	private refresh() {
 		this.renderStatus();
+		this.renderPlace();
 		this.renderSchedule();
 		this.updateGuessButton();
+	}
+
+	/** Shows a location set by a guess rather than typed into the field. */
+	showLocation() {
+		this.lookUpPlaceSoon.cancel();
+		this.lookingUpPlaceFor = null;
+		this.coordinatesText?.setValue(coordinatesKey(this.plugin.settings));
+		if (this.coordinatesErrorEl) {
+			this.coordinatesErrorEl.textContent = "";
+		}
+		this.refresh();
+	}
+
+	private async useLocation(location: LocationSettings) {
+		Object.assign(this.plugin.settings, location);
+		this.showLocation();
+		await this.save();
 	}
 
 	/** Shows settings changed elsewhere, e.g. by the pause command's hotkey. */
@@ -123,6 +174,7 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 		const setting = new Setting(containerEl)
 			.setName("Coordinates")
 			.setDesc("Latitude and longitude of your city, as copied from a map.");
+		this.placeEl = setting.descEl.createEl("div", { cls: "sdns-place" });
 		const errorEl = setting.descEl.createEl("div", { cls: "sdns-error" });
 		this.coordinatesErrorEl = errorEl;
 		const showError = (input: string) => {
@@ -140,12 +192,39 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 						const parsed = parseCoordinatesInput(input);
 						// Keep switching with the last valid location while the user types.
 						if (parsed.error !== undefined) return;
-						this.plugin.settings.latitude = parsed.latitude;
-						this.plugin.settings.longitude = parsed.longitude;
+						const settings = this.plugin.settings;
+						if (coordinatesKey(parsed) === coordinatesKey(settings)) return;
+						settings.latitude = parsed.latitude;
+						settings.longitude = parsed.longitude;
+						settings.locationName = "";
+						this.lookingUpPlaceFor = coordinatesKey(settings);
+						this.lookUpPlaceSoon();
 						await this.save();
 					}, 300)
 				)
 		);
+	}
+
+	private addIpSetting(containerEl: HTMLElement) {
+		new Setting(containerEl)
+			.setName("Guess from IP address")
+			.setDesc(
+				"Fill in the city of your internet connection, looked up by GeoJS (geojs.io). New installs start with it. It is usually your city or a nearby one, but behind a VPN it's the VPN server's."
+			)
+			.addButton((button) =>
+				button.setButtonText("Guess").onClick(async () => {
+					button.setButtonText("Guessing…").setDisabled(true);
+					const location = await locateByIp();
+					button.setButtonText("Guess").setDisabled(false);
+					if (location === null) {
+						new Notice(
+							"Couldn't guess your location from your IP address. Check your internet connection, or enter coordinates."
+						);
+						return;
+					}
+					await this.useLocation(location);
+				})
+			);
 	}
 
 	private addTimeZoneSetting(containerEl: HTMLElement) {
@@ -159,16 +238,45 @@ export class SDNSPluginSettingTab extends PluginSettingTab {
 				`Fill in ${city} (${latitude}, ${longitude}), the main city of your time zone, ${timeZone}. New installs start with it. It can be hundreds of kilometres away, so your own coordinates give more accurate times.`
 			)
 			.addButton((button) => {
-				this.guessButton = button.onClick(async () => {
-					this.plugin.settings.latitude = latitude;
-					this.plugin.settings.longitude = longitude;
-					this.coordinatesText?.setValue(`${latitude}, ${longitude}`);
-					if (this.coordinatesErrorEl) {
-						this.coordinatesErrorEl.textContent = "";
-					}
-					await this.save();
-				});
+				this.guessButton = button.onClick(() =>
+					this.useLocation({ latitude, longitude, locationName: city })
+				);
 			});
+	}
+
+	/** Names the saved coordinates' place, unless they change while it's looked up. */
+	private async lookUpPlace() {
+		const settings = this.plugin.settings;
+		const coordinates = parseCoordinates(settings);
+		if (coordinates === null) return;
+		const key = coordinatesKey(settings);
+		this.lookingUpPlaceFor = key;
+		this.renderPlace();
+
+		const name = await lookUpPlaceName(coordinates);
+		if (coordinatesKey(settings) !== key || this.lookingUpPlaceFor !== key) {
+			return;
+		}
+		this.lookingUpPlaceFor = null;
+		if (name === null) {
+			this.placeNotFoundFor = key;
+			this.renderPlace();
+			return;
+		}
+		settings.locationName = name;
+		await this.save();
+	}
+
+	private renderPlace() {
+		const placeEl = this.placeEl;
+		if (!placeEl) return;
+		const settings = this.plugin.settings;
+		const place =
+			settings.locationName ||
+			(this.lookingUpPlaceFor === coordinatesKey(settings)
+				? "looking it up…"
+				: "impossible to calculate");
+		placeEl.textContent = `Place: ${place}`;
 	}
 
 	/** "Use <city>", or disabled while those coordinates are already in use. */
@@ -378,6 +486,12 @@ function addCoordinatesHelp(containerEl: HTMLElement) {
 	});
 
 	details.createEl("p", {
-		text: "A city within about 200 km of you is accurate enough. Obsidian doesn't let plugins detect your location, so it has to be entered here; it never leaves your device and is only used to calculate sunrise and sunset.",
+		text: "A city within about 200 km of you is accurate enough. Sunrise and sunset are calculated on your device. To show the place's name, the coordinates you enter are sent to OpenStreetMap's Nominatim; the IP address guess asks GeoJS.",
+	});
+	const credit = details.createEl("p");
+	credit.append("Place names © ");
+	credit.createEl("a", {
+		href: "https://www.openstreetmap.org/copyright",
+		text: "OpenStreetMap contributors",
 	});
 }

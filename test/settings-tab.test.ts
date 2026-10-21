@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { formatDate, formatTime } from "../src/format";
+import { locateByIp, lookUpPlaceName } from "../src/locate";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { SDNSPluginSettingTab } from "../src/settings-tab";
 import { getSunTimes } from "../src/sun-times";
 import { createPlugin, stubTimeZone } from "./helpers";
+
+vi.mock("../src/locate", () => ({
+	locateByIp: vi.fn(),
+	lookUpPlaceName: vi.fn(),
+}));
 
 // London (the default) at noon: light until sunset.
 const NOW = new Date(2026, 9, 21, 12);
@@ -62,6 +68,8 @@ const DARK = "🌒 Dark mode";
 beforeEach(() => {
 	vi.useFakeTimers();
 	vi.setSystemTime(NOW);
+	vi.mocked(locateByIp).mockReset().mockResolvedValue(null);
+	vi.mocked(lookUpPlaceName).mockReset().mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -81,6 +89,7 @@ describe("layout", () => {
 			["Pause automatic switching", false],
 			["Location", true],
 			["Coordinates", false],
+			["Guess from IP address", false],
 			["Guess from time zone", false],
 			["Switch times", true],
 			[LIGHT, false],
@@ -230,7 +239,11 @@ describe("coordinates", () => {
 			Array.from(help?.querySelectorAll("a") ?? []).map((a) =>
 				a.getAttribute("href")
 			)
-		).toEqual(["https://www.latlong.net/", "https://www.gps-coordinates.net/"]);
+		).toEqual([
+			"https://www.latlong.net/",
+			"https://www.gps-coordinates.net/",
+			"https://www.openstreetmap.org/copyright",
+		]);
 	});
 });
 
@@ -309,6 +322,146 @@ describe("pause", () => {
 		const { containerEl } = await renderTab();
 
 		expect(() => hotkeyButton(containerEl)?.click()).not.toThrow();
+	});
+});
+
+describe("place", () => {
+	const placeText = (containerEl: HTMLElement) =>
+		settingNamed(containerEl, "Coordinates").querySelector(".sdns-place")
+			?.textContent;
+
+	it("shows the saved place name as text", async () => {
+		const { containerEl } = await renderTab({ locationName: "London" });
+
+		expect(placeText(containerEl)).toBe("Place: London");
+		expect(lookUpPlaceName).not.toHaveBeenCalled();
+	});
+
+	it("looks up the place of coordinates saved without a name", async () => {
+		vi.mocked(lookUpPlaceName).mockResolvedValue("Paris, France");
+		const { plugin, containerEl, saveSettings } = await renderTab({
+			latitude: "48.8566",
+			longitude: "2.3522",
+		});
+		expect(placeText(containerEl)).toBe("Place: looking it up…");
+
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(lookUpPlaceName).toHaveBeenCalledWith({
+			latitude: 48.8566,
+			longitude: 2.3522,
+		});
+		expect(plugin.settings.locationName).toBe("Paris, France");
+		expect(saveSettings).toHaveBeenCalledOnce();
+		expect(placeText(containerEl)).toBe("Place: Paris, France");
+	});
+
+	it("looks up the place of typed coordinates once typing settles", async () => {
+		vi.mocked(lookUpPlaceName).mockResolvedValue("Paris, France");
+		const { plugin, containerEl } = await renderTab({ locationName: "London" });
+		const input = inputFor(containerEl, "Coordinates");
+
+		type(input, "48.8, 2.3");
+		await vi.advanceTimersByTimeAsync(300);
+		type(input, "48.8566, 2.3522");
+		await vi.advanceTimersByTimeAsync(300);
+		expect(placeText(containerEl)).toBe("Place: looking it up…");
+		expect(lookUpPlaceName).not.toHaveBeenCalled();
+
+		await vi.advanceTimersByTimeAsync(1500);
+
+		expect(lookUpPlaceName).toHaveBeenCalledOnce();
+		expect(lookUpPlaceName).toHaveBeenCalledWith({
+			latitude: 48.8566,
+			longitude: 2.3522,
+		});
+		expect(plugin.settings.locationName).toBe("Paris, France");
+		expect(placeText(containerEl)).toBe("Place: Paris, France");
+	});
+
+	it("says when the place can't be found, and doesn't ask again", async () => {
+		const { tab, containerEl } = await renderTab({
+			latitude: "0",
+			longitude: "-30",
+		});
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(placeText(containerEl)).toBe("Place: impossible to calculate");
+
+		tab.display();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(lookUpPlaceName).toHaveBeenCalledOnce();
+		expect(placeText(containerEl)).toBe("Place: impossible to calculate");
+	});
+
+	it("ignores a lookup answer for coordinates that changed meanwhile", async () => {
+		let answer: (name: string) => void = () => undefined;
+		vi.mocked(lookUpPlaceName).mockReturnValue(
+			new Promise((resolve) => (answer = resolve))
+		);
+		const { plugin, containerEl } = await renderTab({
+			latitude: "48.8566",
+			longitude: "2.3522",
+		});
+
+		settingNamed(containerEl, "Guess from time zone")
+			.querySelector("button")
+			?.click();
+		answer("Paris, France");
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(plugin.settings.locationName).toBe("London");
+		expect(placeText(containerEl)).toBe("Place: London");
+	});
+});
+
+describe("guess from IP address", () => {
+	const button = (containerEl: HTMLElement) => {
+		const el = settingNamed(containerEl, "Guess from IP address").querySelector(
+			"button"
+		);
+		if (!el) throw new Error("No button");
+		return el;
+	};
+	const KYIV = {
+		latitude: "50.4547",
+		longitude: "30.5238",
+		locationName: "Kyiv, Ukraine",
+	};
+
+	it("fills in and saves the IP address's location and place", async () => {
+		vi.mocked(locateByIp).mockResolvedValue(KYIV);
+		const { plugin, containerEl, saveSettings } = await renderTab({
+			locationName: "London",
+		});
+
+		button(containerEl).click();
+		expect(button(containerEl).disabled).toBe(true);
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(plugin.settings).toMatchObject(KYIV);
+		expect(saveSettings).toHaveBeenCalledOnce();
+		expect(inputFor(containerEl, "Coordinates").value).toBe(
+			"50.4547, 30.5238"
+		);
+		expect(
+			settingNamed(containerEl, "Coordinates").querySelector(".sdns-place")
+				?.textContent
+		).toBe("Place: Kyiv, Ukraine");
+		expect(button(containerEl).disabled).toBe(false);
+	});
+
+	it("keeps the location if the lookup fails", async () => {
+		const { plugin, containerEl, saveSettings } = await renderTab({
+			locationName: "London",
+		});
+
+		button(containerEl).click();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(plugin.settings).toEqual({ ...DEFAULT_SETTINGS, locationName: "London" });
+		expect(saveSettings).not.toHaveBeenCalled();
+		expect(button(containerEl).disabled).toBe(false);
 	});
 });
 

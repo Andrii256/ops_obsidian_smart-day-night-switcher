@@ -3,6 +3,8 @@ import type { Offsets } from "./sun-times";
 export interface SDNSPluginSettings {
 	latitude: string;
 	longitude: string;
+	/** e.g. "Kyiv, Ukraine"; "" until it is known (looked up by the settings tab). */
+	locationName: string;
 	/** Minutes, see parseOffsets(). */
 	sunriseOffset: string;
 	sunsetOffset: string;
@@ -10,10 +12,12 @@ export interface SDNSPluginSettings {
 	paused: boolean;
 }
 
-// London, unless the first run guesses from the time zone (see loadSettings).
+// London, unless the first run guesses the location (see SDNSPlugin.onload).
+// No name, so settings saved before names existed get theirs looked up.
 export const DEFAULT_SETTINGS: SDNSPluginSettings = {
 	latitude: "51.507351",
 	longitude: "-0.127758",
+	locationName: "",
 	sunriseOffset: "0",
 	sunsetOffset: "0",
 	paused: false,
@@ -40,7 +44,7 @@ const parseCoordinate = (value: string, limit: number): number | null => {
 
 /** Returns null while either value is empty, non-numeric or out of range. */
 export function parseCoordinates(
-	settings: SDNSPluginSettings
+	settings: Pick<SDNSPluginSettings, "latitude" | "longitude">
 ): Coordinates | null {
 	const latitude = parseCoordinate(settings.latitude, 90);
 	const longitude = parseCoordinate(settings.longitude, 180);

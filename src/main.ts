@@ -1,6 +1,7 @@
 import { Notice, Plugin } from "obsidian";
 
 import { ColorScheme, getColorScheme, setColorScheme } from "./color-scheme";
+import { locateByIp } from "./locate";
 import {
 	DEFAULT_SETTINGS,
 	parseCoordinates,
@@ -25,6 +26,9 @@ export default class SDNSPlugin extends Plugin {
 	settings: SDNSPluginSettings = { ...DEFAULT_SETTINGS };
 	defaultColorScheme: ColorScheme = getColorScheme();
 	private settingTab: SDNSPluginSettingTab | null = null;
+	/** Nothing was saved yet, so onload still has to guess the location. */
+	private isFreshInstall = false;
+	private isUnloaded = false;
 
 	async onload() {
 		await this.loadSettings();
@@ -46,9 +50,13 @@ export default class SDNSPlugin extends Plugin {
 				}
 			}, WAKE_CHECK_MS)
 		);
+
+		// Not awaited: switching already runs with the time zone guess.
+		if (this.isFreshInstall) void this.locateFreshInstall();
 	}
 
 	onunload() {
+		this.isUnloaded = true;
 		this.clearTimeout();
 		this.setColorScheme(this.defaultColorScheme);
 	}
@@ -58,15 +66,37 @@ export default class SDNSPlugin extends Plugin {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
 
 		// Nothing saved yet: a fresh install. Start from the time zone's main
-		// city rather than London, and save it so the guess happens only once.
+		// city rather than London; onload then tries the IP address.
 		if (saved == null) {
+			this.isFreshInstall = true;
 			const guess = guessFromTimeZone();
 			if (guess) {
 				this.settings.latitude = guess.latitude;
 				this.settings.longitude = guess.longitude;
-				await this.saveData(this.settings);
+				this.settings.locationName = guess.city;
 			}
 		}
+	}
+
+	/**
+	 * Replaces the time zone guess with the IP address's location, if that
+	 * lookup works, and saves either, so the guess happens only once.
+	 */
+	private async locateFreshInstall() {
+		const { latitude, longitude } = this.settings;
+		const location = await locateByIp();
+		// Unsaved, so the next start tries again.
+		if (this.isUnloaded) return;
+
+		// Keep coordinates the user entered in the meantime.
+		const unchanged =
+			this.settings.latitude === latitude &&
+			this.settings.longitude === longitude;
+		if (location && unchanged) {
+			Object.assign(this.settings, location);
+			this.settingTab?.showLocation();
+		}
+		await this.saveSettings();
 	}
 
 	async saveSettings() {
