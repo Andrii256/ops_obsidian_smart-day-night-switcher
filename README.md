@@ -48,12 +48,3 @@ The plugin uses your latitude and longitude (or your time zone, for the initial 
 
 Feel free to open an issue in [this repository](https://github.com/Andrii256/ops_obsidian_smart-day-night-switcher/issues). I’ll check it out and do my best to help!
 
-# Future Features
-
-If this plugin becomes popular enough (downloaded by over 5,000 people), I’ll make an effort to implement the following features:
-
--   Option to switch not only the color scheme but also the theme itself (a separate theme for nighttime and one for daytime);
--   Smooth color transition  
-    The background color won’t abruptly turn dark black. As the sun begins to set, the plugin will gradually darken the background—slightly at first, then progressively darker until sunset;
--   Synchronization with the ambient light sensor (if the Obsidian API supports this; I haven’t checked yet);
--   Enable dark theme when the device switches to power-saving mode.
