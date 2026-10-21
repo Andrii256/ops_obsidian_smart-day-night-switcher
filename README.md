@@ -4,21 +4,17 @@ Calculates daily sunrise and sunset times for your location and automatically sw
 
 No more manual theme switching!
 
-![Plugin settings tab in dark mode: status line, pause toggle, location, offsets and a seven-day sunrise and sunset schedule](docs/settings-tab.png)
+Sunrise and sunset are calculated on your device. Two free services are used only to guess or name your location, and nothing else is sent anywhere (see the settings for details).
 
-## How does it work?
-
-The plugin calculates sunrise and sunset for your location on your device and switches Obsidian to light mode at sunrise and dark mode at sunset. It finds your location by itself (from your IP address, or your time zone if that fails); for accurate times, you can enter your own coordinates in the settings.
-
----
-
-### ❓ Can it switch a bit before or after sunrise/sunset?
+## ❔️ Can it switch a bit before or after sunrise/sunset?
 
 Yes. Set a sunrise and/or sunset offset (up to 3 hours) in the settings, e.g. to turn on dark mode 10 minutes before sunset.
 
-### ❓ Can I turn it off for a while?
+## ❔️ Can I turn it off for a while?
 
 Yes. Turn on “Pause automatic switching” in the settings, and Obsidian’s own light/dark setting applies until you turn it off. The “Pause or resume automatic switching” command does the same, and the “Set hotkey” button next to the toggle lets you give it a hotkey.
+
+![Plugin settings tab in dark mode: status line, pause toggle, location, offsets and a seven-day sunrise and sunset schedule](docs/settings-tab.png)
 
 ## 🐛💡 Found a bug or have a feature idea?
 
